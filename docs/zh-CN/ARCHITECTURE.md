@@ -13,6 +13,16 @@ BinSight 使用工作流驱动的 AI 架构：
 
 扫描器负责控制工具调用。LLM 不决定是否运行 `objdump`、`readelf` 或 `strings`，只接收结构化扫描结果和检索到的知识上下文。
 
+## 设计原则
+
+BinSight 遵守[工业组件优先法则](DESIGN_PRINCIPLES.md)。成熟的可嵌入库优先于自研 parser 或必需 CLI 工具依赖。
+
+当前状态：
+
+- LIEF 是 PE/ELF 生产级解析的优先方向。
+- 当前内置 PE parser 和字符串提取器属于 **Temporary / Prototype / Educational Implementation**。
+- `objdump`、`llvm-objdump`、`readelf` 是可选增强工具，不是长期核心依赖模型。
+
 ## 核心模块
 
 - `ProcessRunner`：调用外部工具并捕获输出。
@@ -26,4 +36,3 @@ BinSight 使用工作流驱动的 AI 架构：
 ## Agent 边界
 
 第一版不做全自主 agent。后续可以增加 MCP 或聊天层，让 AI 基于 JSON 报告回答追问，但扫描流程本身仍应保持确定性。
-

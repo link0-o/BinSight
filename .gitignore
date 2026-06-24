@@ -7,3 +7,4 @@ report-*.json
 .cache/
 .agents/
 .codex/
+AGENTS.md

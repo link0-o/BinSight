@@ -13,6 +13,16 @@ binary input
 
 The scanner controls tool execution. The LLM does not decide whether to run `objdump`, `readelf`, or `strings`; it only receives structured scan results and retrieved knowledge.
 
+## Design Principle
+
+BinSight follows the [Industrial Component First Rule](DESIGN_PRINCIPLES.md). Mature embeddable libraries are preferred over custom parsers or required CLI tool dependencies.
+
+Current status:
+
+- LIEF is the preferred production direction for PE/ELF parsing.
+- The built-in PE parser and string extractor are **Temporary / Prototype / Educational Implementation**.
+- `objdump`, `llvm-objdump`, and `readelf` are optional enrichment tools, not the desired long-term core dependency model.
+
 ## Components
 
 - `ProcessRunner`: invokes external tools and captures output.
@@ -26,4 +36,3 @@ The scanner controls tool execution. The LLM does not decide whether to run `obj
 ## Agent Boundary
 
 Full agent behavior is intentionally deferred. A future MCP or chat layer may answer follow-up questions from the JSON report, but the scan pipeline remains deterministic and testable.
-

@@ -2,31 +2,69 @@
 
 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
-BinSight scans executable files and produces evidence-grounded risk reports. The first version is a C++20 CLI that uses a deterministic scan pipeline, local risk rules, local RAG knowledge, and an optional LLM analysis step.
-
-The scanner is deliberately not a fully autonomous agent. Tool execution is fixed and auditable; the LLM explains risk from observed evidence.
+BinSight scans executable files and produces evidence-grounded risk reports. It uses a deterministic scan pipeline, local risk rules, local RAG knowledge, and an optional LLM analysis step. The scanner is not a fully autonomous agent: tool execution is fixed and auditable, while the LLM explains risk from observed evidence.
 
 ## Features
 
+- Native Linux and Windows CLI builds.
 - ELF and PE format detection.
-- Library, import, section, string, and bounded disassembly extraction.
-- YAML risk rules with evidence output.
-- Local Markdown knowledge retrieval for RAG context.
-- Markdown and JSON reports.
+- PE imports and sections from the current built-in fallback parser, so Windows PE scans do not require WSL.
+- Suspicious ASCII and UTF-16LE string extraction without an external `strings` command.
+- Optional bounded disassembly snippets when `objdump` or `llvm-objdump` is available.
+- YAML-style risk rules, local Markdown RAG context, and Markdown/JSON reports.
 - LLM providers:
   - `none` for offline rule-only reports.
-  - `openai` for OpenAI-compatible chat completions.
+  - `openai` for OpenAI-compatible chat completions, including DeepSeek.
   - `ollama` for local Ollama generation.
 
-## Build
+## Download
 
-```bash
-cmake -S . -B build -G Ninja
-cmake --build build
-ctest --test-dir build
+For normal use, download a package from GitHub Releases:
+
+- `BinSight-vX.Y.Z-windows-x86_64.zip`
+- `BinSight-vX.Y.Z-linux-x86_64.tar.gz`
+
+Windows:
+
+```powershell
+.\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
 ```
 
-The current prototype builds without third-party C++ dependencies so it can run in restricted environments. The module boundaries still allow later replacement with CLI11, yaml-cpp, nlohmann/json, or Catch2 if desired.
+Linux:
+
+```bash
+./bin/binsight scan ./sample --provider none --out report.md --json report.json
+```
+
+The release package includes `rules/`, `knowledge/`, and `docs/`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
+
+## Build From Source
+
+Linux:
+
+```bash
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build
+ctest --test-dir build --output-on-failure
+```
+
+Windows with Visual Studio 2022:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build --build-config Release --output-on-failure
+```
+
+Optional LIEF dependency:
+
+```bash
+cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
+```
+
+The built-in parser remains available when LIEF is disabled, which keeps restricted or offline builds usable.
+
+BinSight follows the [Industrial Component First Rule](docs/DESIGN_PRINCIPLES.md): mature embeddable components are preferred over custom parsers or required CLI tool dependencies. The current built-in parser is a **Temporary / Prototype / Educational Implementation** fallback; LIEF is the preferred production parsing direction.
 
 ## Usage
 
@@ -36,7 +74,20 @@ Offline analysis:
 ./build/binsight scan ./sample --provider none --out report.md --json report.json
 ```
 
-OpenAI-compatible analysis:
+DeepSeek through the OpenAI-compatible provider:
+
+```bash
+export DEEPSEEK_API_KEY=...
+./build/binsight scan ./sample \
+  --provider openai \
+  --base-url https://api.deepseek.com \
+  --model deepseek-chat \
+  --api-key-env DEEPSEEK_API_KEY \
+  --out report.md \
+  --json report.json
+```
+
+OpenAI:
 
 ```bash
 export OPENAI_API_KEY=...
@@ -49,7 +100,7 @@ export OPENAI_API_KEY=...
   --json report.json
 ```
 
-Ollama analysis:
+Ollama:
 
 ```bash
 ./build/binsight scan ./sample \
@@ -60,6 +111,23 @@ Ollama analysis:
   --json report.json
 ```
 
-## Output
+## Reports
 
-The Markdown report is bilingual English/Chinese and intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, and disassembly snippets.
+The Markdown report is bilingual English/Chinese and intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, RAG context, and optional disassembly snippets.
+
+## Release
+
+Local package:
+
+```bash
+cmake --build build --target package
+```
+
+GitHub release:
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+Tag pushes trigger the release workflow and upload Linux/Windows packages to GitHub Releases.

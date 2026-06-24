@@ -2,10 +2,15 @@
 #include <binsight/utils.hpp>
 
 #include <algorithm>
+#include <cctype>
+#include <fstream>
 #include <filesystem>
+#include <limits>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
+#include <vector>
 
 namespace binsight {
 
@@ -13,6 +18,83 @@ namespace {
 
 bool contains(const std::string& text, const std::string& needle) {
   return text.find(needle) != std::string::npos;
+}
+
+std::vector<unsigned char> read_bytes(const std::filesystem::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    return {};
+  }
+  return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+std::uint16_t le16(const std::vector<unsigned char>& data, std::size_t offset) {
+  if (offset + 2 > data.size()) {
+    return 0;
+  }
+  return static_cast<std::uint16_t>(data[offset] | (data[offset + 1] << 8));
+}
+
+std::uint32_t le32(const std::vector<unsigned char>& data, std::size_t offset) {
+  if (offset + 4 > data.size()) {
+    return 0;
+  }
+  return static_cast<std::uint32_t>(data[offset]) |
+         (static_cast<std::uint32_t>(data[offset + 1]) << 8) |
+         (static_cast<std::uint32_t>(data[offset + 2]) << 16) |
+         (static_cast<std::uint32_t>(data[offset + 3]) << 24);
+}
+
+std::uint64_t le64(const std::vector<unsigned char>& data, std::size_t offset) {
+  return static_cast<std::uint64_t>(le32(data, offset)) |
+         (static_cast<std::uint64_t>(le32(data, offset + 4)) << 32);
+}
+
+std::string read_c_string(const std::vector<unsigned char>& data, std::size_t offset,
+                          std::size_t limit = 4096) {
+  std::string out;
+  for (std::size_t i = offset; i < data.size() && out.size() < limit; ++i) {
+    if (data[i] == 0) {
+      break;
+    }
+    out.push_back(static_cast<char>(data[i]));
+  }
+  return out;
+}
+
+std::string pe_architecture(std::uint16_t machine) {
+  switch (machine) {
+    case 0x014c:
+      return "x86";
+    case 0x8664:
+      return "x86_64";
+    case 0xaa64:
+      return "arm64";
+    case 0x01c0:
+    case 0x01c4:
+      return "arm";
+    default:
+      return "unknown";
+  }
+}
+
+std::string elf_architecture(std::uint16_t machine) {
+  switch (machine) {
+    case 0x03:
+      return "x86";
+    case 0x3e:
+      return "x86_64";
+    case 0xb7:
+      return "aarch64";
+    case 0x28:
+      return "arm";
+    default:
+      return "unknown";
+  }
+}
+
+bool is_printable_ascii(unsigned char c) {
+  return c == '\t' || (c >= 0x20 && c <= 0x7e);
 }
 
 std::uint64_t parse_hex_or_zero(const std::string& value) {
@@ -34,6 +116,99 @@ std::string normalize_symbol(std::string symbol) {
     symbol = symbol.substr(0, at_pos);
   }
   return symbol;
+}
+
+struct PeSection {
+  std::string name;
+  std::uint32_t virtual_address = 0;
+  std::uint32_t virtual_size = 0;
+  std::uint32_t raw_pointer = 0;
+  std::uint32_t raw_size = 0;
+  std::uint32_t characteristics = 0;
+};
+
+std::optional<std::size_t> pe_rva_to_offset(const std::vector<PeSection>& sections,
+                                            std::uint32_t rva) {
+  for (const auto& section : sections) {
+    const std::uint32_t span = std::max(section.virtual_size, section.raw_size);
+    if (rva >= section.virtual_address && rva < section.virtual_address + span) {
+      return static_cast<std::size_t>(section.raw_pointer + (rva - section.virtual_address));
+    }
+  }
+  if (rva < 0x1000) {
+    return static_cast<std::size_t>(rva);
+  }
+  return std::nullopt;
+}
+
+std::vector<PeSection> parse_pe_sections(const std::vector<unsigned char>& data,
+                                         std::size_t pe_offset,
+                                         std::uint16_t section_count,
+                                         std::uint16_t optional_header_size) {
+  std::vector<PeSection> sections;
+  std::size_t section_offset = pe_offset + 24 + optional_header_size;
+  for (std::uint16_t i = 0; i < section_count && section_offset + 40 <= data.size(); ++i) {
+    PeSection section;
+    for (std::size_t n = 0; n < 8 && data[section_offset + n] != 0; ++n) {
+      section.name.push_back(static_cast<char>(data[section_offset + n]));
+    }
+    section.virtual_size = le32(data, section_offset + 8);
+    section.virtual_address = le32(data, section_offset + 12);
+    section.raw_size = le32(data, section_offset + 16);
+    section.raw_pointer = le32(data, section_offset + 20);
+    section.characteristics = le32(data, section_offset + 36);
+    sections.push_back(section);
+    section_offset += 40;
+  }
+  return sections;
+}
+
+std::string pe_section_flags(std::uint32_t characteristics) {
+  std::string flags;
+  if ((characteristics & 0x40000000u) != 0) {
+    flags += "R";
+  }
+  if ((characteristics & 0x80000000u) != 0) {
+    flags += "W";
+  }
+  if ((characteristics & 0x20000000u) != 0) {
+    flags += "X";
+  }
+  return flags;
+}
+
+void append_ascii_strings(const std::vector<unsigned char>& data, std::ostringstream& out) {
+  std::string current;
+  for (unsigned char c : data) {
+    if (is_printable_ascii(c)) {
+      current.push_back(static_cast<char>(c));
+      continue;
+    }
+    if (current.size() >= 5) {
+      out << current << '\n';
+    }
+    current.clear();
+  }
+  if (current.size() >= 5) {
+    out << current << '\n';
+  }
+}
+
+void append_utf16le_strings(const std::vector<unsigned char>& data, std::ostringstream& out) {
+  std::string current;
+  for (std::size_t i = 0; i + 1 < data.size(); i += 2) {
+    if (data[i + 1] == 0 && is_printable_ascii(data[i])) {
+      current.push_back(static_cast<char>(data[i]));
+      continue;
+    }
+    if (current.size() >= 5) {
+      out << current << '\n';
+    }
+    current.clear();
+  }
+  if (current.size() >= 5) {
+    out << current << '\n';
+  }
 }
 
 }  // namespace
@@ -64,6 +239,31 @@ TargetInfo BinaryAnalyzer::detect_target(const ScanOptions& options, AnalysisRep
     target.content_hash = fnv1a64_file(options.binary_path);
   }
 
+  const auto data = read_bytes(options.binary_path);
+  if (data.size() >= 20 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' && data[3] == 'F') {
+    target.format = BinaryFormat::ELF;
+    target.format_name = "ELF";
+    target.bits = data[4] == 2 ? 64 : 32;
+    target.architecture = elf_architecture(le16(data, 18));
+    return target;
+  }
+  if (data.size() >= 0x40 && data[0] == 'M' && data[1] == 'Z') {
+    const std::uint32_t pe_offset = le32(data, 0x3c);
+    if (pe_offset + 26 < data.size() && data[pe_offset] == 'P' && data[pe_offset + 1] == 'E' &&
+        data[pe_offset + 2] == 0 && data[pe_offset + 3] == 0) {
+      target.format = BinaryFormat::PE;
+      target.format_name = "PE";
+      const std::uint16_t machine = le16(data, pe_offset + 4);
+      const std::uint16_t characteristics = le16(data, pe_offset + 22);
+      const std::uint16_t optional_magic = le16(data, pe_offset + 24);
+      target.architecture = pe_architecture(machine);
+      target.bits = optional_magic == 0x20b ? 64 : (optional_magic == 0x10b ? 32 : 0);
+      target.stripped = (characteristics & 0x0200u) != 0;
+      return target;
+    }
+  }
+
+#ifndef _WIN32
   const ToolResult file = runner_.run({"file", "-b", options.binary_path.string()});
   if (file.exit_code != 0) {
     report.warnings.push_back("file command failed: " + file.output);
@@ -95,6 +295,9 @@ TargetInfo BinaryAnalyzer::detect_target(const ScanOptions& options, AnalysisRep
   } else if (contains(lower, "arm")) {
     target.architecture = "arm";
   }
+#else
+  (void)report;
+#endif
   return target;
 }
 
@@ -151,77 +354,135 @@ void BinaryAnalyzer::analyze_elf(const ScanOptions& options, AnalysisReport& rep
 }
 
 void BinaryAnalyzer::analyze_pe(const ScanOptions& options, AnalysisReport& report) const {
-  const ToolResult headers = runner_.run({"objdump", "-p", options.binary_path.string()});
-  if (headers.exit_code == 0) {
-    std::string current_dll;
-    bool in_imports = false;
-    std::set<std::string> seen_imports;
-    std::regex dll_re(R"(DLL Name:\s*(.+))");
-    std::regex import_re(R"(^\s*[0-9a-fA-F]+\s+<none>\s+[0-9a-fA-F]+\s+(\S+)\s*$)");
-    for (const auto& line : split_lines(headers.output)) {
-      std::smatch match;
-      if (line.find("The Import Tables") != std::string::npos) {
-        in_imports = true;
-        continue;
-      }
-      if (line.find("The Export Tables") != std::string::npos ||
-          line.find("The Function Table") != std::string::npos ||
-          line.find("PE File Base Relocations") != std::string::npos) {
-        in_imports = false;
-        current_dll.clear();
-      }
-      if (!in_imports) {
-        continue;
-      }
-      if (std::regex_search(line, match, dll_re)) {
-        current_dll = trim(match[1].str());
-        const std::string key = current_dll + "\n";
-        if (seen_imports.insert(key).second) {
-          report.imports.push_back({current_dll, ""});
-        }
-      } else if (!current_dll.empty() && std::regex_match(line, match, import_re)) {
-        const std::string symbol = trim(match[1].str());
-        const std::string key = current_dll + "\n" + symbol;
-        if (!symbol.empty() && seen_imports.insert(key).second) {
-          report.imports.push_back({current_dll, symbol});
-        }
-      }
-    }
-  } else {
-    report.warnings.push_back("objdump -p failed: " + headers.output);
+  // Temporary / Prototype / Educational Implementation.
+  // Production PE parsing should prefer the configured embeddable parser component.
+  const auto data = read_bytes(options.binary_path);
+  if (data.size() < 0x40 || data[0] != 'M' || data[1] != 'Z') {
+    report.warnings.push_back("PE parser failed: missing MZ header");
+    return;
+  }
+  const std::uint32_t pe_offset = le32(data, 0x3c);
+  if (pe_offset + 24 >= data.size() || data[pe_offset] != 'P' || data[pe_offset + 1] != 'E') {
+    report.warnings.push_back("PE parser failed: missing PE signature");
+    return;
   }
 
-  const ToolResult sections = runner_.run({"objdump", "-h", options.binary_path.string()});
-  if (sections.exit_code == 0) {
-    std::regex sec_re(R"(^\s*\d+\s+(\S+)\s+([0-9a-fA-F]+)\s+)");
-    for (const auto& line : split_lines(sections.output)) {
-      std::smatch match;
-      if (std::regex_search(line, match, sec_re)) {
-        SectionInfo section;
-        section.name = match[1].str();
-        section.size = parse_hex_or_zero(match[2].str());
-        section.flags = "";
-        report.sections.push_back(section);
+  const std::uint16_t section_count = le16(data, pe_offset + 6);
+  const std::uint16_t optional_header_size = le16(data, pe_offset + 20);
+  const std::uint16_t optional_magic = le16(data, pe_offset + 24);
+  const bool is_pe64 = optional_magic == 0x20b;
+  const std::size_t data_directory_offset = pe_offset + 24 + (is_pe64 ? 112 : 96);
+  const auto pe_sections = parse_pe_sections(data, pe_offset, section_count, optional_header_size);
+
+  for (const auto& pe_section : pe_sections) {
+    SectionInfo section;
+    section.name = pe_section.name;
+    section.size = pe_section.raw_size != 0 ? pe_section.raw_size : pe_section.virtual_size;
+    section.flags = pe_section_flags(pe_section.characteristics);
+    if (contains(section.flags, "W") && contains(section.flags, "X")) {
+      section.risk_note = "writable and executable";
+    }
+    report.sections.push_back(section);
+  }
+
+  if (data_directory_offset + 16 > data.size()) {
+    report.warnings.push_back("PE parser warning: import directory unavailable");
+    return;
+  }
+  const std::uint32_t import_rva = le32(data, data_directory_offset + 8);
+  if (import_rva == 0) {
+    return;
+  }
+  const auto import_offset = pe_rva_to_offset(pe_sections, import_rva);
+  if (!import_offset || *import_offset >= data.size()) {
+    report.warnings.push_back("PE parser warning: import directory RVA could not be mapped");
+    return;
+  }
+
+  std::set<std::string> seen_imports;
+  for (std::size_t descriptor = *import_offset; descriptor + 20 <= data.size(); descriptor += 20) {
+    const std::uint32_t original_first_thunk = le32(data, descriptor);
+    const std::uint32_t name_rva = le32(data, descriptor + 12);
+    const std::uint32_t first_thunk = le32(data, descriptor + 16);
+    if (original_first_thunk == 0 && name_rva == 0 && first_thunk == 0) {
+      break;
+    }
+
+    const auto name_offset = pe_rva_to_offset(pe_sections, name_rva);
+    if (!name_offset || *name_offset >= data.size()) {
+      continue;
+    }
+    const std::string dll_name = read_c_string(data, *name_offset);
+    if (dll_name.empty()) {
+      continue;
+    }
+    if (seen_imports.insert(dll_name + "\n").second) {
+      report.imports.push_back({dll_name, ""});
+    }
+
+    const std::uint32_t thunk_rva = original_first_thunk != 0 ? original_first_thunk : first_thunk;
+    const auto thunk_offset = pe_rva_to_offset(pe_sections, thunk_rva);
+    if (!thunk_offset || *thunk_offset >= data.size()) {
+      continue;
+    }
+
+    const std::size_t thunk_size = is_pe64 ? 8 : 4;
+    const std::uint64_t ordinal_mask = is_pe64 ? 0x8000000000000000ull : 0x80000000ull;
+    for (std::size_t thunk = *thunk_offset; thunk + thunk_size <= data.size(); thunk += thunk_size) {
+      const std::uint64_t value = is_pe64 ? le64(data, thunk) : le32(data, thunk);
+      if (value == 0) {
+        break;
+      }
+      if ((value & ordinal_mask) != 0) {
+        continue;
+      }
+      const auto hint_name_offset = pe_rva_to_offset(pe_sections, static_cast<std::uint32_t>(value));
+      if (!hint_name_offset || *hint_name_offset + 2 >= data.size()) {
+        continue;
+      }
+      const std::string symbol = read_c_string(data, *hint_name_offset + 2);
+      const std::string key = dll_name + "\n" + symbol;
+      if (!symbol.empty() && seen_imports.insert(key).second) {
+        report.imports.push_back({dll_name, symbol});
       }
     }
-  } else {
-    report.warnings.push_back("objdump -h failed: " + sections.output);
   }
 }
 
 void BinaryAnalyzer::extract_strings(const ScanOptions& options, AnalysisReport& report) const {
-  const ToolResult strings = runner_.run({"strings", "-a", "-n", "5", options.binary_path.string()});
-  if (strings.exit_code != 0) {
-    report.warnings.push_back("strings failed: " + strings.output);
+  const auto data = read_bytes(options.binary_path);
+  if (data.empty()) {
+    report.warnings.push_back("internal strings extractor failed: file could not be read");
     return;
   }
-  report.strings = string_scanner_.scan(strings.output);
+  std::ostringstream extracted;
+  append_ascii_strings(data, extracted);
+  append_utf16le_strings(data, extracted);
+  report.strings = string_scanner_.scan(extracted.str());
 }
 
 void BinaryAnalyzer::extract_disassembly(const ScanOptions& options, AnalysisReport& report) const {
+  if (options.max_disasm_snippets <= 0) {
+    return;
+  }
+
   const ToolResult disasm = runner_.run({"objdump", "-d", options.binary_path.string()}, 30);
   if (disasm.exit_code != 0) {
-    report.warnings.push_back("objdump -d failed: " + disasm.output);
+    const ToolResult llvm_disasm = runner_.run({"llvm-objdump", "-d", options.binary_path.string()}, 30);
+    if (llvm_disasm.exit_code != 0) {
+      report.warnings.push_back("optional disassembly unavailable: objdump/llvm-objdump failed");
+      return;
+    }
+    const auto lines = split_lines(llvm_disasm.output);
+    if (lines.empty()) {
+      report.warnings.push_back("optional disassembly unavailable: llvm-objdump returned no output");
+      return;
+    }
+    std::ostringstream snippet;
+    for (std::size_t i = 0; i < std::min<std::size_t>(18, lines.size()); ++i) {
+      snippet << lines[i] << '\n';
+    }
+    report.disassembly_snippets.push_back({"entry-context", snippet.str()});
     return;
   }
 

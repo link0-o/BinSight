@@ -4,28 +4,77 @@
 
 - `include/binsight/`: public project headers.
 - `src/`: implementation.
-- `tests/`: Catch2 tests.
-- `rules/`: YAML risk rules.
+- `tests/`: unit and integration-style tests.
+- `rules/`: YAML-style risk rules.
 - `knowledge/`: local RAG documents.
-- `docs/`: architecture and project documentation.
+- `docs/`: English documentation.
+- `docs/zh-CN/`: Chinese documentation.
 
-## Build
+## Linux Build
 
 ```bash
-cmake -S . -B build -G Ninja
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-ctest --test-dir build
+ctest --test-dir build --output-on-failure
 ```
 
-The current prototype intentionally avoids third-party C++ dependencies so it can build without network access. Planned dependency-backed replacements are CLI11 for argument parsing, yaml-cpp for full YAML, nlohmann/json for richer JSON handling, and Catch2 for test ergonomics.
+## Windows Build
+
+Install Visual Studio 2022 with the C++ desktop workload:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+ctest --test-dir build --build-config Release --output-on-failure
+```
+
+## Parser Dependencies
+
+BinSight follows the [Industrial Component First Rule](DESIGN_PRINCIPLES.md). Production-grade parsing should prefer a mature embeddable component over custom parsing code or required CLI tool dependencies.
+
+Coding agents must follow the repository-level [AGENTS.md](../AGENTS.md) before modifying this project. That file is the AI auto-read production red-line entrypoint, not optional contributor documentation.
+
+LIEF is the preferred direction for PE/ELF parsing:
+
+```bash
+cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
+```
+
+The current built-in parser covers the minimum evidence needed by the first release:
+
+- ELF/PE magic and architecture detection.
+- PE import directory parsing.
+- PE section table parsing.
+- ASCII and UTF-16LE string extraction.
+
+This built-in parser is classified as **Temporary / Prototype / Educational Implementation**. It exists as a fallback for offline or dependency-restricted development and should be replaced by LIEF-backed parsing where LIEF satisfies the same requirement.
 
 ## External Tools
 
-Runtime scanning expects standard binary utilities when available:
+Runtime scanning treats these tools as optional when available:
 
-- `file`
-- `readelf`
-- `objdump`
-- `strings`
+- `objdump` or `llvm-objdump`: bounded disassembly snippets.
+- `readelf`: extra ELF dynamic metadata on Linux.
+- `curl`: only for `openai` or `ollama` providers.
 
-Missing tools should produce warnings rather than process crashes.
+Missing optional tools should produce warnings rather than process crashes.
+
+## Packaging
+
+Local package:
+
+```bash
+cmake --build build --target package
+```
+
+Release packages include the executable, `rules/`, `knowledge/`, `docs/`, both READMEs, and `LICENSE`.
+
+## CI
+
+GitHub Actions runs:
+
+- Ubuntu build and tests.
+- Windows build and tests.
+- CLI help smoke test.
+
+Pushing a `v*` tag runs the release workflow and publishes Linux/Windows packages.

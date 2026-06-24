@@ -76,6 +76,27 @@ std::string fnv1a64_file(const std::filesystem::path& path) {
 }
 
 std::string shell_quote(const std::string& value) {
+#ifdef _WIN32
+  std::string out = "\"";
+  std::size_t backslashes = 0;
+  for (char c : value) {
+    if (c == '\\') {
+      ++backslashes;
+      continue;
+    }
+    if (c == '"') {
+      out.append(backslashes * 2 + 1, '\\');
+      out.push_back('"');
+    } else {
+      out.append(backslashes, '\\');
+      out.push_back(c);
+    }
+    backslashes = 0;
+  }
+  out.append(backslashes * 2, '\\');
+  out.push_back('"');
+  return out;
+#else
   std::string out = "'";
   for (char c : value) {
     if (c == '\'') {
@@ -86,6 +107,7 @@ std::string shell_quote(const std::string& value) {
   }
   out += "'";
   return out;
+#endif
 }
 
 std::string json_escape_for_shell_file(const std::string& value) {

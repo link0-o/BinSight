@@ -21,6 +21,8 @@ struct ScanOptions {
   std::filesystem::path binary_path;
   std::filesystem::path knowledge_dir = "knowledge";
   std::filesystem::path rules_dir = "rules";
+  bool knowledge_dir_explicit = false;
+  bool rules_dir_explicit = false;
   std::filesystem::path markdown_out = "report.md";
   std::filesystem::path json_out = "report.json";
   std::string provider = "none";

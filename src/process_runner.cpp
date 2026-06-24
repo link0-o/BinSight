@@ -5,7 +5,13 @@
 #include <cstdio>
 #include <cstdlib>
 #include <sstream>
+
+#ifdef _WIN32
+#define popen _popen
+#define pclose _pclose
+#else
 #include <sys/wait.h>
+#endif
 
 namespace binsight {
 
@@ -17,9 +23,13 @@ ToolResult ProcessRunner::run(const std::vector<std::string>& args, int timeout_
   }
 
   std::ostringstream command;
+#ifndef _WIN32
   if (timeout_seconds > 0) {
     command << "timeout " << timeout_seconds << "s ";
   }
+#else
+  (void)timeout_seconds;
+#endif
   for (std::size_t i = 0; i < args.size(); ++i) {
     if (i != 0) {
       command << ' ';
@@ -40,13 +50,16 @@ ToolResult ProcessRunner::run(const std::vector<std::string>& args, int timeout_
   }
 
   const int status = pclose(pipe);
+#ifdef _WIN32
+  result.exit_code = status;
+#else
   if (WIFEXITED(status)) {
     result.exit_code = WEXITSTATUS(status);
   } else {
     result.exit_code = status;
   }
+#endif
   return result;
 }
 
 }  // namespace binsight
-

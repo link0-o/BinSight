@@ -5,6 +5,7 @@
 #include <binsight/risk_rule_engine.hpp>
 
 #include <exception>
+#include <filesystem>
 #include <iostream>
 #include <string>
 
@@ -26,6 +27,35 @@ bool next_value(int& index, int argc, char** argv, std::string& value) {
   }
   value = argv[++index];
   return true;
+}
+
+std::filesystem::path executable_dir(char** argv) {
+  std::error_code ec;
+  std::filesystem::path path = std::filesystem::absolute(argv[0], ec);
+  if (ec) {
+    return {};
+  }
+  return path.parent_path();
+}
+
+std::filesystem::path resolve_resource_dir(const std::filesystem::path& requested,
+                                           bool explicit_path,
+                                           const std::filesystem::path& exe_dir,
+                                           const std::string& name) {
+  if (explicit_path || std::filesystem::exists(requested)) {
+    return requested;
+  }
+  if (!exe_dir.empty()) {
+    const auto beside_exe = exe_dir / name;
+    if (std::filesystem::exists(beside_exe)) {
+      return beside_exe;
+    }
+    const auto one_up = exe_dir.parent_path() / name;
+    if (std::filesystem::exists(one_up)) {
+      return one_up;
+    }
+  }
+  return requested;
 }
 
 }  // namespace
@@ -66,8 +96,10 @@ int main(int argc, char** argv) {
       options.api_key_env = value;
     } else if (arg == "--knowledge-dir" && next_value(i, argc, argv, value)) {
       options.knowledge_dir = value;
+      options.knowledge_dir_explicit = true;
     } else if (arg == "--rules-dir" && next_value(i, argc, argv, value)) {
       options.rules_dir = value;
+      options.rules_dir_explicit = true;
     } else if (arg == "--max-disasm-snippets" && next_value(i, argc, argv, value)) {
       options.max_disasm_snippets = std::stoi(value);
     } else {
@@ -76,6 +108,11 @@ int main(int argc, char** argv) {
       return 1;
     }
   }
+
+  const auto exe_dir = executable_dir(argv);
+  options.knowledge_dir = resolve_resource_dir(options.knowledge_dir, options.knowledge_dir_explicit,
+                                               exe_dir, "knowledge");
+  options.rules_dir = resolve_resource_dir(options.rules_dir, options.rules_dir_explicit, exe_dir, "rules");
 
   if (options.provider != "none" && options.provider != "openai" && options.provider != "ollama") {
     std::cerr << "binsight: provider must be one of none, openai, or ollama\n";
@@ -111,4 +148,3 @@ int main(int argc, char** argv) {
     return 1;
   }
 }
-
