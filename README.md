@@ -8,7 +8,8 @@ BinSight scans executable files and produces evidence-grounded risk reports. It 
 
 - Native Linux and Windows CLI builds.
 - ELF and PE format detection.
-- PE imports and sections from the current built-in fallback parser, so Windows PE scans do not require WSL.
+- LIEF-backed production PE/ELF parsing for imports, sections, architecture, and bitness.
+- Built-in fallback parser for dependency-restricted or offline development builds.
 - Suspicious ASCII and UTF-16LE string extraction without an external `strings` command.
 - Optional bounded disassembly snippets when `objdump` or `llvm-objdump` is available.
 - YAML-style risk rules, local Markdown RAG context, and Markdown/JSON reports.
@@ -56,15 +57,15 @@ cmake --build build --config Release
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
-Optional LIEF dependency:
+Production parser build with LIEF:
 
 ```bash
 cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
 ```
 
-The built-in parser remains available when LIEF is disabled, which keeps restricted or offline builds usable.
+`BINSIGHT_USE_LIEF` is ON by default. Use `-DBINSIGHT_USE_LIEF=OFF` only for dependency-restricted or offline development builds.
 
-BinSight follows the [Industrial Component First Rule](docs/DESIGN_PRINCIPLES.md): mature embeddable components are preferred over custom parsers or required CLI tool dependencies. The current built-in parser is a **Temporary / Prototype / Educational Implementation** fallback; LIEF is the preferred production parsing direction.
+BinSight follows the [Industrial Component First Rule](docs/DESIGN_PRINCIPLES.md): mature embeddable components are preferred over custom parsers or required CLI tool dependencies. LIEF is the production PE/ELF parser. The built-in parser is a **Temporary / Prototype / Educational Implementation** fallback.
 
 ## Usage
 

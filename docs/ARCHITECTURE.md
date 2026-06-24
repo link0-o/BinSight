@@ -11,7 +11,7 @@ binary input
   -> Markdown + JSON report
 ```
 
-The scanner controls tool execution. The LLM does not decide whether to run `objdump`, `readelf`, or `strings`; it only receives structured scan results and retrieved knowledge.
+The scanner controls evidence extraction. The LLM does not decide whether to parse binaries or run optional enrichment tools; it only receives structured scan results and retrieved knowledge.
 
 ## Design Principle
 
@@ -19,14 +19,14 @@ BinSight follows the [Industrial Component First Rule](DESIGN_PRINCIPLES.md). Ma
 
 Current status:
 
-- LIEF is the preferred production direction for PE/ELF parsing.
-- The built-in PE parser and string extractor are **Temporary / Prototype / Educational Implementation**.
-- `objdump`, `llvm-objdump`, and `readelf` are optional enrichment tools, not the desired long-term core dependency model.
+- LIEF is the production PE/ELF parsing path for format, architecture, imports, and sections.
+- The built-in PE parser and external-tool ELF parser are **Temporary / Prototype / Educational Implementation** fallback paths.
+- `objdump` and `llvm-objdump` are optional disassembly enrichment tools, not core scan dependencies.
 
 ## Components
 
-- `ProcessRunner`: invokes external tools and captures output.
-- `BinaryAnalyzer`: detects ELF/PE and extracts metadata, imports, sections, strings, and disassembly snippets.
+- `ProcessRunner`: invokes optional external tools and captures output.
+- `BinaryAnalyzer`: uses LIEF first for ELF/PE metadata, imports, and sections, then falls back only when LIEF is disabled or parsing fails.
 - `StringScanner`: classifies suspicious strings.
 - `RiskRuleEngine`: matches deterministic YAML rules and emits evidence.
 - `LocalRagIndex`: retrieves local knowledge documents by keyword scoring.

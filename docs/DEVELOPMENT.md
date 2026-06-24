@@ -34,27 +34,32 @@ BinSight follows the [Industrial Component First Rule](DESIGN_PRINCIPLES.md). Pr
 
 Coding agents must follow the repository-level [AGENTS.md](../AGENTS.md) before modifying this project. That file is the AI auto-read production red-line entrypoint, not optional contributor documentation.
 
-LIEF is the preferred direction for PE/ELF parsing:
+LIEF is the production PE/ELF parsing path and is enabled by default:
 
 ```bash
 cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
 ```
 
-The current built-in parser covers the minimum evidence needed by the first release:
+Use this only for dependency-restricted or offline development builds:
+
+```bash
+cmake -S . -B build -DBINSIGHT_USE_LIEF=OFF
+```
+
+The fallback parser covers the minimum evidence needed when LIEF is unavailable:
 
 - ELF/PE magic and architecture detection.
 - PE import directory parsing.
 - PE section table parsing.
 - ASCII and UTF-16LE string extraction.
 
-This built-in parser is classified as **Temporary / Prototype / Educational Implementation**. It exists as a fallback for offline or dependency-restricted development and should be replaced by LIEF-backed parsing where LIEF satisfies the same requirement.
+This built-in parser is classified as **Temporary / Prototype / Educational Implementation**. It exists as a fallback for offline or dependency-restricted development and must not be treated as the production parser while LIEF satisfies the same requirement.
 
 ## External Tools
 
 Runtime scanning treats these tools as optional when available:
 
 - `objdump` or `llvm-objdump`: bounded disassembly snippets.
-- `readelf`: extra ELF dynamic metadata on Linux.
 - `curl`: only for `openai` or `ollama` providers.
 
 Missing optional tools should produce warnings rather than process crashes.

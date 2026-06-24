@@ -20,7 +20,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_USE_LIEF=ON
 
       - name: Build
         run: cmake --build build --config Release

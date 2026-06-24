@@ -8,7 +8,8 @@ BinSight 是一个用于扫描可执行文件并生成风险分析报告的 C++2
 
 - 支持 Linux 和 Windows 原生命令行程序。
 - 识别 ELF 和 PE 可执行文件。
-- 当前内置 fallback parser 可提取 PE imports 和 sections，Windows 扫描 PE 不再依赖 WSL。
+- 使用 LIEF 作为生产级 PE/ELF 主解析路径，提取 imports、sections、架构和位数。
+- 保留内置 fallback parser，供依赖受限或离线开发构建使用。
 - 内置 ASCII 和 UTF-16LE 字符串提取，不再依赖外部 `strings` 命令。
 - 如果系统存在 `objdump` 或 `llvm-objdump`，会额外提取有限反汇编片段；缺失时只写 warning。
 - 使用 YAML 风格风险规则、本地 Markdown RAG 知识库，输出 Markdown 和 JSON 报告。
@@ -56,15 +57,15 @@ cmake --build build --config Release
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
-可选启用 LIEF：
+使用 LIEF 的生产级解析构建：
 
 ```bash
 cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
 ```
 
-即使没有启用 LIEF，内置解析器也能完成基础 PE/ELF 识别、PE 导入表、节区和字符串扫描，适合离线或受限环境。
+`BINSIGHT_USE_LIEF` 默认开启。只有在依赖受限或离线开发构建时，才建议显式传 `-DBINSIGHT_USE_LIEF=OFF`。
 
-BinSight 遵守[工业组件优先法则](docs/zh-CN/DESIGN_PRINCIPLES.md)：成熟可嵌入组件优先于自研 parser 或必需 CLI 工具依赖。当前内置 parser 属于 **Temporary / Prototype / Educational Implementation** fallback；LIEF 是生产级解析的优先方向。
+BinSight 遵守[工业组件优先法则](docs/zh-CN/DESIGN_PRINCIPLES.md)：成熟可嵌入组件优先于自研 parser 或必需 CLI 工具依赖。LIEF 是生产级 PE/ELF parser；当前内置 parser 属于 **Temporary / Prototype / Educational Implementation** fallback。
 
 ## 使用
 

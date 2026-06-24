@@ -1,6 +1,10 @@
 #include <binsight/binary_analyzer.hpp>
 #include <binsight/utils.hpp>
 
+#ifdef BINSIGHT_USE_LIEF
+#include <LIEF/LIEF.hpp>
+#endif
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -177,6 +181,46 @@ std::string pe_section_flags(std::uint32_t characteristics) {
   return flags;
 }
 
+#ifdef BINSIGHT_USE_LIEF
+void fill_target_common(const ScanOptions& options, TargetInfo& target) {
+  target.path = options.binary_path.string();
+  if (std::filesystem::exists(options.binary_path)) {
+    target.size = std::filesystem::file_size(options.binary_path);
+    target.content_hash = fnv1a64_file(options.binary_path);
+  }
+}
+
+std::string pe_lief_architecture(LIEF::PE::Header::MACHINE_TYPES machine) {
+  return pe_architecture(static_cast<std::uint16_t>(machine));
+}
+
+std::string elf_lief_architecture(LIEF::ELF::ARCH machine) {
+  return elf_architecture(static_cast<std::uint16_t>(machine));
+}
+
+std::string elf_section_flags(const LIEF::ELF::Section& section) {
+  std::string flags;
+  if (section.has(LIEF::ELF::Section::FLAGS::ALLOC)) {
+    flags += "A";
+  }
+  if (section.has(LIEF::ELF::Section::FLAGS::WRITE)) {
+    flags += "W";
+  }
+  if (section.has(LIEF::ELF::Section::FLAGS::EXECINSTR)) {
+    flags += "X";
+  }
+  return flags;
+}
+
+void add_unique_import(std::vector<ImportEntry>& imports, std::set<std::string>& seen,
+                       std::string library, std::string symbol) {
+  const std::string key = library + "\n" + symbol;
+  if (seen.insert(key).second) {
+    imports.push_back({std::move(library), std::move(symbol)});
+  }
+}
+#endif
+
 void append_ascii_strings(const std::vector<unsigned char>& data, std::ostringstream& out) {
   std::string current;
   for (unsigned char c : data) {
@@ -218,6 +262,13 @@ BinaryAnalyzer::BinaryAnalyzer(ProcessRunner runner, StringScanner string_scanne
 
 AnalysisReport BinaryAnalyzer::analyze(const ScanOptions& options) const {
   AnalysisReport report;
+#ifdef BINSIGHT_USE_LIEF
+  if (analyze_with_lief(options, report)) {
+    extract_strings(options, report);
+    extract_disassembly(options, report);
+    return report;
+  }
+#endif
   report.target = detect_target(options, report);
   if (report.target.format == BinaryFormat::ELF) {
     analyze_elf(options, report);
@@ -229,6 +280,119 @@ AnalysisReport BinaryAnalyzer::analyze(const ScanOptions& options) const {
   extract_strings(options, report);
   extract_disassembly(options, report);
   return report;
+}
+
+bool BinaryAnalyzer::analyze_with_lief(const ScanOptions& options, AnalysisReport& report) const {
+#ifndef BINSIGHT_USE_LIEF
+  (void)options;
+  (void)report;
+  return false;
+#else
+  const auto data = read_bytes(options.binary_path);
+  if (data.empty()) {
+    report.warnings.push_back("LIEF parser skipped: file could not be read");
+    return false;
+  }
+
+  try {
+    if (data.size() >= 20 && data[0] == 0x7f && data[1] == 'E' && data[2] == 'L' &&
+        data[3] == 'F') {
+      auto binary = LIEF::ELF::Parser::parse(options.binary_path.string());
+      if (binary == nullptr) {
+        report.warnings.push_back("LIEF ELF parser failed; using fallback parser");
+        return false;
+      }
+
+      fill_target_common(options, report.target);
+      report.target.format = BinaryFormat::ELF;
+      report.target.format_name = "ELF";
+      report.target.bits = data[4] == 2 ? 64 : (data[4] == 1 ? 32 : 0);
+      report.target.architecture = elf_lief_architecture(binary->header().machine_type());
+
+      std::set<std::string> seen_imports;
+      for (const auto& entry : binary->dynamic_entries()) {
+        if (const auto* library = entry.cast<LIEF::ELF::DynamicEntryLibrary>()) {
+          add_unique_import(report.imports, seen_imports, library->name(), "");
+        }
+      }
+      for (const auto& symbol : binary->imported_symbols()) {
+        const std::string name = normalize_symbol(symbol.name());
+        if (!name.empty()) {
+          add_unique_import(report.imports, seen_imports, "", name);
+        }
+      }
+
+      bool has_symtab = false;
+      for (const auto& lief_section : binary->sections()) {
+        SectionInfo section;
+        section.name = lief_section.name();
+        section.size = lief_section.size();
+        section.flags = elf_section_flags(lief_section);
+        if (section.name == ".symtab") {
+          has_symtab = true;
+        }
+        if (contains(section.flags, "W") && contains(section.flags, "X")) {
+          section.risk_note = "writable and executable";
+        }
+        report.sections.push_back(section);
+      }
+      report.target.stripped = !has_symtab;
+      return true;
+    }
+
+    if (data.size() >= 0x40 && data[0] == 'M' && data[1] == 'Z') {
+      auto binary = LIEF::PE::Parser::parse(options.binary_path.string());
+      if (binary == nullptr) {
+        report.warnings.push_back("LIEF PE parser failed; using fallback parser");
+        return false;
+      }
+
+      fill_target_common(options, report.target);
+      report.target.format = BinaryFormat::PE;
+      report.target.format_name = "PE";
+      report.target.architecture = pe_lief_architecture(binary->header().machine());
+      report.target.bits = binary->type() == LIEF::PE::PE_TYPE::PE32_PLUS ? 64 : 32;
+      report.target.stripped =
+          binary->header().has_characteristic(LIEF::PE::Header::CHARACTERISTICS::DEBUG_STRIPPED) ||
+          binary->header().has_characteristic(
+              LIEF::PE::Header::CHARACTERISTICS::LOCAL_SYMS_STRIPPED);
+
+      std::set<std::string> seen_imports;
+      for (const auto& import : binary->imports()) {
+        add_unique_import(report.imports, seen_imports, import.name(), "");
+        for (const auto& entry : import.entries()) {
+          std::string symbol;
+          if (entry.is_ordinal()) {
+            symbol = "#" + std::to_string(entry.ordinal());
+          } else {
+            symbol = entry.name();
+          }
+          if (!symbol.empty()) {
+            add_unique_import(report.imports, seen_imports, import.name(), symbol);
+          }
+        }
+      }
+
+      for (const auto& lief_section : binary->sections()) {
+        SectionInfo section;
+        section.name = lief_section.name();
+        section.size = lief_section.sizeof_raw_data() != 0 ? lief_section.sizeof_raw_data()
+                                                           : lief_section.virtual_size();
+        section.flags = pe_section_flags(lief_section.characteristics());
+        if (contains(section.flags, "W") && contains(section.flags, "X")) {
+          section.risk_note = "writable and executable";
+        }
+        report.sections.push_back(section);
+      }
+      return true;
+    }
+  } catch (const std::exception& ex) {
+    report.warnings.push_back(std::string("LIEF parser failed; using fallback parser: ") + ex.what());
+    return false;
+  }
+
+  return false;
+#endif
 }
 
 TargetInfo BinaryAnalyzer::detect_target(const ScanOptions& options, AnalysisReport& report) const {

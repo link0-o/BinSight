@@ -1,4 +1,7 @@
 build/
+build-*/
+CMakeFiles/
+CMakeCache.txt
 *.md.tmp
 report.md
 report.*.md

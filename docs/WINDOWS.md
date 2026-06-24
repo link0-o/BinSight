@@ -42,7 +42,7 @@ The native Windows build prioritizes PE files:
 - `.dll`
 - common Windows PE samples
 
-Core PE evidence is currently extracted by the built-in fallback parser:
+Core PE evidence is extracted by the LIEF-backed production parser in release builds:
 
 - format, architecture, and bitness
 - DLL imports
@@ -52,7 +52,7 @@ Core PE evidence is currently extracted by the built-in fallback parser:
 
 If `objdump` or `llvm-objdump` is installed, BinSight also attempts bounded disassembly snippets. Missing disassembly tools do not fail the scan; they only add a report warning.
 
-Per the [Industrial Component First Rule](DESIGN_PRINCIPLES.md), this built-in parser is a **Temporary / Prototype / Educational Implementation**. LIEF is the preferred production direction for embedded PE/ELF parsing.
+Per the [Industrial Component First Rule](DESIGN_PRINCIPLES.md), LIEF is the production PE/ELF parser. The built-in parser remains available only as a **Temporary / Prototype / Educational Implementation** fallback when LIEF is disabled or unavailable.
 
 ## DeepSeek
 

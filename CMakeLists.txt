@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
-option(BINSIGHT_USE_LIEF "Enable the LIEF-backed parser dependency for release builds" OFF)
+option(BINSIGHT_USE_LIEF "Enable the LIEF-backed production PE/ELF parser" ON)
 
 add_library(binsight_core
   src/binary_analyzer.cpp
@@ -28,15 +28,33 @@ if(WIN32)
 endif()
 
 if(BINSIGHT_USE_LIEF)
-  include(FetchContent)
-  set(LIEF_PYTHON_API OFF CACHE BOOL "" FORCE)
-  set(LIEF_EXAMPLES OFF CACHE BOOL "" FORCE)
-  set(LIEF_TESTS OFF CACHE BOOL "" FORCE)
-  FetchContent_Declare(
-    LIEF
-    GIT_REPOSITORY https://github.com/lief-project/LIEF.git
-    GIT_TAG 0.16.6)
-  FetchContent_MakeAvailable(LIEF)
+  find_package(LIEF CONFIG QUIET)
+  if(NOT TARGET LIEF::LIEF AND NOT TARGET LIB_LIEF)
+    include(FetchContent)
+    set(LIEF_PYTHON_API OFF CACHE BOOL "" FORCE)
+    set(LIEF_C_API OFF CACHE BOOL "" FORCE)
+    set(LIEF_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(LIEF_TESTS OFF CACHE BOOL "" FORCE)
+    set(LIEF_USE_CCACHE OFF CACHE BOOL "" FORCE)
+    set(LIEF_ENABLE_JSON OFF CACHE BOOL "" FORCE)
+    set(LIEF_ELF ON CACHE BOOL "" FORCE)
+    set(LIEF_PE ON CACHE BOOL "" FORCE)
+    set(LIEF_COFF ON CACHE BOOL "" FORCE)
+    set(LIEF_MACHO OFF CACHE BOOL "" FORCE)
+    set(LIEF_DEX OFF CACHE BOOL "" FORCE)
+    set(LIEF_ART OFF CACHE BOOL "" FORCE)
+    set(LIEF_OAT OFF CACHE BOOL "" FORCE)
+    set(LIEF_VDEX OFF CACHE BOOL "" FORCE)
+    set(LIEF_DEBUG_INFO OFF CACHE BOOL "" FORCE)
+    set(LIEF_OBJC OFF CACHE BOOL "" FORCE)
+    set(LIEF_DYLD_SHARED_CACHE OFF CACHE BOOL "" FORCE)
+    set(LIEF_ASM OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(
+      LIEF
+      GIT_REPOSITORY https://github.com/lief-project/LIEF.git
+      GIT_TAG 0.17.6)
+    FetchContent_MakeAvailable(LIEF)
+  endif()
   if(TARGET LIEF::LIEF)
     target_link_libraries(binsight_core PUBLIC LIEF::LIEF)
     target_compile_definitions(binsight_core PUBLIC BINSIGHT_USE_LIEF=1)

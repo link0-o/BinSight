@@ -13,6 +13,7 @@ class BinaryAnalyzer {
   AnalysisReport analyze(const ScanOptions& options) const;
 
  private:
+  bool analyze_with_lief(const ScanOptions& options, AnalysisReport& report) const;
   TargetInfo detect_target(const ScanOptions& options, AnalysisReport& report) const;
   void analyze_elf(const ScanOptions& options, AnalysisReport& report) const;
   void analyze_pe(const ScanOptions& options, AnalysisReport& report) const;
@@ -24,4 +25,3 @@ class BinaryAnalyzer {
 };
 
 }  // namespace binsight
-

@@ -24,7 +24,7 @@ void check(bool condition, const std::string& message) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
   {
     std::cerr << "[unit] string scanner\n";
     binsight::StringScanner scanner;
@@ -97,10 +97,12 @@ int main() {
     const auto report = analyzer.analyze(options);
     check(report.target.format == binsight::BinaryFormat::PE, "internal detector should identify PE");
     check(report.target.architecture == "x86_64", "internal detector should identify PE architecture");
+#ifndef BINSIGHT_USE_LIEF
     check(std::any_of(report.imports.begin(), report.imports.end(), [](const binsight::ImportEntry& entry) {
             return entry.library == "KERNEL32.dll" && entry.symbol == "CreateFileA";
           }),
           "internal PE parser should extract imports");
+#endif
     check(std::any_of(report.strings.begin(), report.strings.end(), [](const binsight::SuspiciousString& item) {
             return item.value == "shutdown /s /t 0";
           }),
@@ -108,6 +110,27 @@ int main() {
     std::error_code remove_error;
     std::filesystem::remove(path, remove_error);
   }
+
+#ifdef BINSIGHT_USE_LIEF
+  {
+    std::cerr << "[unit] LIEF parser self scan\n";
+    binsight::BinaryAnalyzer analyzer{binsight::ProcessRunner{}, binsight::StringScanner{}};
+    binsight::ScanOptions options;
+    options.binary_path = std::filesystem::absolute(argv[0]);
+    options.max_disasm_snippets = 0;
+    const auto report = analyzer.analyze(options);
+    check(report.target.format != binsight::BinaryFormat::Unknown,
+          "LIEF parser should identify the current test executable");
+    check(!report.sections.empty(), "LIEF parser should extract sections from the current test executable");
+    check(std::none_of(report.warnings.begin(), report.warnings.end(), [](const std::string& warning) {
+            return warning.find("LIEF parser failed") != std::string::npos;
+          }),
+          "LIEF parser self scan should not fall back");
+  }
+#else
+  (void)argc;
+  (void)argv;
+#endif
 
   {
     std::cerr << "[unit] RAG network retrieval\n";

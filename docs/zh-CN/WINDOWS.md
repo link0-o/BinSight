@@ -42,7 +42,7 @@ report.json
 - `.dll`
 - 常见 Windows PE 样本
 
-当前核心 PE 信息由内置 fallback parser 提取：
+发行构建中的核心 PE 信息由 LIEF-backed 生产级 parser 提取：
 
 - 文件格式、架构、位数
 - DLL imports
@@ -52,7 +52,7 @@ report.json
 
 如果系统安装了 `objdump` 或 `llvm-objdump`，BinSight 会额外尝试提取有限反汇编片段。没有这些工具也不会失败，只会在报告 `Warnings / 警告` 里说明反汇编不可用。
 
-根据[工业组件优先法则](DESIGN_PRINCIPLES.md)，该内置 parser 属于 **Temporary / Prototype / Educational Implementation**。LIEF 是生产级 PE/ELF 可嵌入解析的优先方向。
+根据[工业组件优先法则](DESIGN_PRINCIPLES.md)，LIEF 是生产级 PE/ELF parser。内置 parser 只在 LIEF 禁用或不可用时作为 **Temporary / Prototype / Educational Implementation** fallback 保留。
 
 ## 使用 DeepSeek
 
