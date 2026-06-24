@@ -27,13 +27,13 @@ For normal use, download a package from GitHub Releases:
 Windows:
 
 ```powershell
-.\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\bin\binsight.exe scan .\sample.exe
 ```
 
 Linux:
 
 ```bash
-./bin/binsight scan ./sample --provider none --out report.md --json report.json
+./bin/binsight scan ./sample
 ```
 
 The release package includes `rules/`, `knowledge/`, and `docs/`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
@@ -71,7 +71,27 @@ BinSight follows the [Industrial Component First Rule](docs/DESIGN_PRINCIPLES.md
 Offline analysis:
 
 ```bash
-./build/binsight scan ./sample --provider none --out report.md --json report.json
+./build/binsight scan ./sample
+```
+
+By default BinSight writes:
+
+- `report.zh-CN.md`
+- `report.en.md`
+- `report.json`
+
+Choose a single Markdown language when needed:
+
+```bash
+./build/binsight scan ./sample --report-lang zh-CN
+./build/binsight scan ./sample --report-lang en
+```
+
+Interactive configuration:
+
+```bash
+./build/binsight config wizard
+./build/binsight config show
 ```
 
 DeepSeek through the OpenAI-compatible provider:
@@ -82,10 +102,17 @@ export DEEPSEEK_API_KEY=...
   --provider openai \
   --base-url https://api.deepseek.com \
   --model deepseek-chat \
-  --api-key-env DEEPSEEK_API_KEY \
-  --out report.md \
-  --json report.json
+  --api-key-env DEEPSEEK_API_KEY
 ```
+
+On Windows, store API keys in Windows Credential Manager:
+
+```powershell
+.\bin\binsight.exe config set-key --provider deepseek
+.\bin\binsight.exe config wizard
+```
+
+The config file stores only non-sensitive values and a credential reference name. API keys are not written to reports, JSON, or plaintext config files.
 
 OpenAI:
 
@@ -113,7 +140,7 @@ Ollama:
 
 ## Reports
 
-The Markdown report is bilingual English/Chinese and intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, RAG context, and optional disassembly snippets.
+Markdown reports are language-specific and intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, RAG context, and optional disassembly snippets.
 
 ## Release
 

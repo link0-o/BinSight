@@ -21,7 +21,15 @@ BinSight/
 运行离线扫描：
 
 ```powershell
-.\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\bin\binsight.exe scan .\sample.exe
+```
+
+默认生成：
+
+```text
+report.zh-CN.md
+report.en.md
+report.json
 ```
 
 不传 `--rules-dir` 和 `--knowledge-dir` 时，程序会自动从发行包目录查找 `rules/` 和 `knowledge/`。
@@ -51,16 +59,16 @@ BinSight/
 PowerShell：
 
 ```powershell
-$env:DEEPSEEK_API_KEY="你的 key"
+.\bin\binsight.exe config set-key --provider deepseek
+.\bin\binsight.exe config wizard
 
 .\bin\binsight.exe scan .\sample.exe `
   --provider openai `
   --base-url https://api.deepseek.com `
-  --model deepseek-chat `
-  --api-key-env DEEPSEEK_API_KEY `
-  --out report-deepseek.md `
-  --json report-deepseek.json
+  --model deepseek-chat
 ```
+
+`config set-key` 会把 API key 保存到 Windows Credential Manager。配置文件只保存凭据引用名，不保存明文 key。
 
 如果只是验证扫描链路，先用 `--provider none`，不会联网，也不会产生模型费用。
 
@@ -77,7 +85,7 @@ ctest --test-dir build --build-config Release --output-on-failure
 运行：
 
 ```powershell
-.\build\Release\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\build\Release\binsight.exe scan .\sample.exe
 ```
 
 ## 可选工具

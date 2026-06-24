@@ -13,6 +13,7 @@ option(BINSIGHT_USE_LIEF "Enable the LIEF-backed parser dependency for release b
 
 add_library(binsight_core
   src/binary_analyzer.cpp
+  src/config.cpp
   src/llm_client.cpp
   src/local_rag.cpp
   src/process_runner.cpp
@@ -22,6 +23,9 @@ add_library(binsight_core
   src/types.cpp
   src/utils.cpp)
 target_include_directories(binsight_core PUBLIC include)
+if(WIN32)
+  target_link_libraries(binsight_core PUBLIC Advapi32)
+endif()
 
 if(BINSIGHT_USE_LIEF)
   include(FetchContent)

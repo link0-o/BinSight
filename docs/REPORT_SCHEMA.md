@@ -1,6 +1,14 @@
 # Report Schema
 
-BinSight writes Markdown for humans and JSON for automation.
+BinSight writes language-specific Markdown for humans and JSON for automation.
+
+Default scan output:
+
+- `report.zh-CN.md`
+- `report.en.md`
+- `report.json`
+
+Use `--report-lang zh-CN|en|both` to control Markdown output. JSON field names remain stable English identifiers and do not change with report language.
 
 ## JSON Top Level
 
@@ -28,4 +36,3 @@ BinSight writes Markdown for humans and JSON for automation.
 - `rule_findings`: deterministic rule hits and evidence.
 - `rag_context`: local knowledge entries used for analysis.
 - `ai_analysis`: provider, model, summary, severity, risk sources, recommendations, and raw response.
-

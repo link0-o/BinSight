@@ -14,10 +14,10 @@ class LlmClient {
 
  private:
   AiAnalysis offline_analysis(const ScanOptions& options, const AnalysisReport& report) const;
-  std::string build_prompt(const AnalysisReport& report) const;
+  std::string build_prompt(const ScanOptions& options, const AnalysisReport& report) const;
+  std::string system_prompt(const ScanOptions& options) const;
 
   ProcessRunner runner_;
 };
 
 }  // namespace binsight
-

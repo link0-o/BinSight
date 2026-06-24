@@ -21,7 +21,15 @@ BinSight/
 Run an offline scan:
 
 ```powershell
-.\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\bin\binsight.exe scan .\sample.exe
+```
+
+Default outputs:
+
+```text
+report.zh-CN.md
+report.en.md
+report.json
 ```
 
 When `--rules-dir` and `--knowledge-dir` are omitted, BinSight searches the release package layout automatically.
@@ -49,16 +57,16 @@ Per the [Industrial Component First Rule](DESIGN_PRINCIPLES.md), this built-in p
 ## DeepSeek
 
 ```powershell
-$env:DEEPSEEK_API_KEY="your key"
+.\bin\binsight.exe config set-key --provider deepseek
+.\bin\binsight.exe config wizard
 
 .\bin\binsight.exe scan .\sample.exe `
   --provider openai `
   --base-url https://api.deepseek.com `
-  --model deepseek-chat `
-  --api-key-env DEEPSEEK_API_KEY `
-  --out report-deepseek.md `
-  --json report-deepseek.json
+  --model deepseek-chat
 ```
+
+`config set-key` stores the API key in Windows Credential Manager. The config file stores only a credential reference name, not the plaintext key.
 
 Use `--provider none` first when you only want to validate the scan pipeline.
 
@@ -75,7 +83,7 @@ ctest --test-dir build --build-config Release --output-on-failure
 Run:
 
 ```powershell
-.\build\Release\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\build\Release\binsight.exe scan .\sample.exe
 ```
 
 ## Optional Tools

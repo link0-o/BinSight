@@ -1,10 +1,12 @@
 #include <binsight/llm_client.hpp>
+#include <binsight/config.hpp>
 #include <binsight/report_writer.hpp>
 #include <binsight/utils.hpp>
 
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <regex>
 #include <sstream>
 
@@ -29,6 +31,61 @@ std::string first_chars(const std::string& value, std::size_t count) {
   return value.substr(0, count) + "...";
 }
 
+std::string json_unescape_string(const std::string& value) {
+  std::string out;
+  out.reserve(value.size());
+  bool escape = false;
+  for (char c : value) {
+    if (escape) {
+      switch (c) {
+        case 'n':
+          out.push_back('\n');
+          break;
+        case 'r':
+          out.push_back('\r');
+          break;
+        case 't':
+          out.push_back('\t');
+          break;
+        case '"':
+          out.push_back('"');
+          break;
+        case '\\':
+          out.push_back('\\');
+          break;
+        default:
+          out.push_back(c);
+          break;
+      }
+      escape = false;
+    } else if (c == '\\') {
+      escape = true;
+    } else {
+      out.push_back(c);
+    }
+  }
+  return out;
+}
+
+std::optional<std::string> api_key_from_options(const ScanOptions& options,
+                                                std::vector<std::string>& warnings) {
+  if (!options.api_key_name.empty()) {
+    CredentialStore store;
+    std::string error;
+    auto secret = store.load(options.api_key_name, error);
+    if (secret && !secret->empty()) {
+      return secret;
+    }
+    warnings.push_back("configured API key was not available from secure storage: " + error);
+  }
+
+  const char* key = std::getenv(options.api_key_env.c_str());
+  if (key != nullptr && std::string(key).size() > 0) {
+    return std::string(key);
+  }
+  return std::nullopt;
+}
+
 }  // namespace
 
 LlmClient::LlmClient(ProcessRunner runner) : runner_(std::move(runner)) {}
@@ -40,27 +97,25 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
     return offline_analysis(options, report);
   }
 
-  const std::string prompt = build_prompt(report);
+  const std::string prompt = build_prompt(options, report);
   std::string body;
   std::string url;
-  std::vector<std::string> args = {"curl", "-sS", "-X", "POST", "-H", "Content-Type: application/json"};
+  std::vector<std::string> curl_headers = {"Content-Type: application/json"};
 
   if (options.provider == "openai") {
-    const char* key = std::getenv(options.api_key_env.c_str());
-    if (key == nullptr || std::string(key).empty()) {
-      warnings.push_back("OpenAI-compatible provider requested but API key env var is missing: " +
+    const auto key = api_key_from_options(options, warnings);
+    if (!key) {
+      warnings.push_back("OpenAI-compatible provider requested but no API key is available. Configure secure storage or env var: " +
                          options.api_key_env);
       return offline_analysis(options, report);
     }
     const std::string base = options.base_url.empty() ? "https://api.openai.com/v1" : options.base_url;
     url = base + "/chat/completions";
-    args.push_back("-H");
-    args.push_back("Authorization: Bearer " + std::string(key));
+    curl_headers.push_back("Authorization: Bearer " + *key);
     const std::string model = options.model.empty() ? "gpt-4.1-mini" : options.model;
     body = std::string("{\"model\":\"") + json_escape(model) +
-           "\",\"temperature\":0.1,\"messages\":[{\"role\":\"system\",\"content\":\""
-           "You are a binary risk analyst. Use only the provided evidence and retrieved knowledge. "
-           "Separate confirmed evidence from speculation.\"},{\"role\":\"user\",\"content\":\"" +
+           "\",\"temperature\":0.1,\"messages\":[{\"role\":\"system\",\"content\":\"" +
+           json_escape(system_prompt(options)) + "\"},{\"role\":\"user\",\"content\":\"" +
            json_escape(prompt) + "\"}]}";
   } else if (options.provider == "ollama") {
     const std::string base = options.base_url.empty() ? "http://localhost:11434" : options.base_url;
@@ -75,13 +130,22 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
 
   const auto temp_path = std::filesystem::temp_directory_path() /
                          ("binsight-llm-request-" + std::to_string(std::rand()) + ".json");
+  const auto curl_config_path = std::filesystem::temp_directory_path() /
+                                ("binsight-curl-config-" + std::to_string(std::rand()) + ".txt");
   write_file(temp_path, body);
-  args.push_back("--data-binary");
-  args.push_back("@" + temp_path.string());
-  args.push_back(url);
+  std::ostringstream curl_config;
+  curl_config << "request = \"POST\"\n";
+  curl_config << "url = \"" << url << "\"\n";
+  for (const auto& header : curl_headers) {
+    curl_config << "header = \"" << header << "\"\n";
+  }
+  curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
+  write_file(curl_config_path, curl_config.str());
 
+  std::vector<std::string> args = {"curl", "-sS", "--config", curl_config_path.string()};
   ToolResult response = runner_.run(args, 60);
   std::filesystem::remove(temp_path);
+  std::filesystem::remove(curl_config_path);
   if (response.exit_code != 0) {
     warnings.push_back("LLM request failed: " + response.output);
     return offline_analysis(options, report);
@@ -95,11 +159,11 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
   if (options.provider == "openai" &&
       std::regex_search(response.output, match,
                         std::regex(R"JSON("content"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
-    analysis.summary = match[1].str();
+    analysis.summary = json_unescape_string(match[1].str());
   } else if (options.provider == "ollama" &&
              std::regex_search(response.output, match,
                                std::regex(R"JSON("response"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
-    analysis.summary = match[1].str();
+    analysis.summary = json_unescape_string(match[1].str());
   } else {
     warnings.push_back("failed to parse LLM response JSON with lightweight parser");
     analysis.summary = first_chars(response.output, 1200);
@@ -130,16 +194,37 @@ AiAnalysis LlmClient::offline_analysis(const ScanOptions& options, const Analysi
   return analysis;
 }
 
-std::string LlmClient::build_prompt(const AnalysisReport& report) const {
+std::string LlmClient::build_prompt(const ScanOptions& options, const AnalysisReport& report) const {
   std::ostringstream prompt;
-  prompt << "Analyze the binary risk from this structured evidence. Return concise Markdown with:\n"
-         << "- Overall severity\n"
-         << "- Confirmed evidence\n"
-         << "- Speculative risks\n"
-         << "- Risk sources\n"
-         << "- Recommendations\n\n"
-         << to_json(report);
+  if (options.report_language == ReportLanguage::English) {
+    prompt << "Analyze the binary risk from this structured evidence. Return concise English Markdown with:\n"
+           << "- Overall severity\n"
+           << "- Confirmed evidence\n"
+           << "- Speculative risks\n"
+           << "- Risk sources\n"
+           << "- Recommendations\n\n";
+  } else {
+    prompt << "请基于以下结构化证据分析二进制文件风险。请使用简洁、专业的中文 Markdown，并包含：\n"
+           << "- 总体风险等级\n"
+           << "- 已确认的证据\n"
+           << "- 推测性风险\n"
+           << "- 风险来源\n"
+           << "- 处置建议\n\n";
+  }
+  prompt << to_json(report);
   return first_chars(prompt.str(), 24000);
+}
+
+std::string LlmClient::system_prompt(const ScanOptions& options) const {
+  std::ostringstream prompt;
+  if (options.report_language == ReportLanguage::English) {
+    prompt << "You are a binary risk analyst. Use only the provided evidence and retrieved knowledge. "
+           << "Separate confirmed evidence from speculation. Answer in English.";
+  } else {
+    prompt << "你是二进制安全风险分析员。只能基于提供的证据和检索到的知识进行判断，"
+           << "必须区分已确认事实和推测风险。请使用中文回答。";
+  }
+  return prompt.str();
 }
 
 }  // namespace binsight

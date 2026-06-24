@@ -1,9 +1,14 @@
 # 报告结构
 
-BinSight 输出两种报告：
+BinSight 输出面向人工阅读的分语言 Markdown，以及面向自动化的 JSON。
 
-- Markdown：面向人工阅读。
-- JSON：面向测试、自动化和未来 MCP/agent 集成。
+默认扫描输出：
+
+- `report.zh-CN.md`
+- `report.en.md`
+- `report.json`
+
+可以用 `--report-lang zh-CN|en|both` 控制 Markdown 输出语言。JSON 字段名保持稳定英文标识，不随报告语言变化。
 
 ## JSON 顶层结构
 
@@ -32,4 +37,3 @@ BinSight 输出两种报告：
 - `rag_context`：参与分析的本地知识条目。
 - `ai_analysis`：模型提供方、模型名、摘要、风险来源和建议。
 - `warnings`：工具缺失、解析失败或不支持格式等非致命问题。
-

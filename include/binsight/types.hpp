@@ -11,6 +11,8 @@ enum class BinaryFormat { Unknown, ELF, PE };
 
 enum class Severity { Info, Low, Medium, High, Critical };
 
+enum class ReportLanguage { English, Chinese, Both };
+
 struct ToolResult {
   int exit_code = -1;
   std::string output;
@@ -25,10 +27,13 @@ struct ScanOptions {
   bool rules_dir_explicit = false;
   std::filesystem::path markdown_out = "report.md";
   std::filesystem::path json_out = "report.json";
+  std::filesystem::path output_dir;
+  ReportLanguage report_language = ReportLanguage::Both;
   std::string provider = "none";
   std::string model;
   std::string base_url;
   std::string api_key_env = "OPENAI_API_KEY";
+  std::string api_key_name;
   int max_disasm_snippets = 6;
 };
 
@@ -109,7 +114,9 @@ struct AnalysisReport {
 
 std::string to_string(BinaryFormat format);
 std::string to_string(Severity severity);
+std::string to_string(ReportLanguage language);
 Severity severity_from_string(const std::string& value);
+ReportLanguage report_language_from_string(const std::string& value);
 std::string to_json(const AnalysisReport& report);
 
 }  // namespace binsight

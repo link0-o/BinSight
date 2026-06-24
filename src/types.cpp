@@ -34,6 +34,18 @@ std::string to_string(Severity severity) {
   return "info";
 }
 
+std::string to_string(ReportLanguage language) {
+  switch (language) {
+    case ReportLanguage::English:
+      return "en";
+    case ReportLanguage::Chinese:
+      return "zh-CN";
+    case ReportLanguage::Both:
+      return "both";
+  }
+  return "both";
+}
+
 Severity severity_from_string(const std::string& value) {
   std::string lower = value;
   std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
@@ -44,6 +56,13 @@ Severity severity_from_string(const std::string& value) {
   if (lower == "medium") return Severity::Medium;
   if (lower == "low") return Severity::Low;
   return Severity::Info;
+}
+
+ReportLanguage report_language_from_string(const std::string& value) {
+  const std::string lower = lowercase(value);
+  if (lower == "en" || lower == "english") return ReportLanguage::English;
+  if (lower == "zh-cn" || lower == "zh" || lower == "chinese") return ReportLanguage::Chinese;
+  return ReportLanguage::Both;
 }
 
 namespace {

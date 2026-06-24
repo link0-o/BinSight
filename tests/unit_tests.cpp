@@ -177,14 +177,28 @@ int main() {
     report.ai_analysis.summary = "No deterministic risk rules matched.";
 
     const auto path = std::filesystem::current_path() / "binsight-report-writer-test.json";
+    const auto zh_path = std::filesystem::current_path() / "binsight-report-writer-test.zh-CN.md";
+    const auto en_path = std::filesystem::current_path() / "binsight-report-writer-test.en.md";
     binsight::ReportWriter writer;
     writer.write_json(path, report);
+    writer.write_markdown(zh_path, report, binsight::ReportLanguage::Chinese);
+    writer.write_markdown(en_path, report, binsight::ReportLanguage::English);
 
     std::ifstream in(path);
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     check(content.find("\"target\"") != std::string::npos, "JSON report should contain target");
+    std::ifstream zh_in(zh_path);
+    std::string zh_content((std::istreambuf_iterator<char>(zh_in)), std::istreambuf_iterator<char>());
+    check(zh_content.find("## 目标文件") != std::string::npos, "Chinese report should use Chinese headings");
+    check(zh_content.find("Target /") == std::string::npos, "Chinese report should not use mixed headings");
+    std::ifstream en_in(en_path);
+    std::string en_content((std::istreambuf_iterator<char>(en_in)), std::istreambuf_iterator<char>());
+    check(en_content.find("## Target") != std::string::npos, "English report should use English headings");
+    check(en_content.find("目标文件") == std::string::npos, "English report should not use Chinese headings");
     std::error_code remove_error;
     std::filesystem::remove(path, remove_error);
+    std::filesystem::remove(zh_path, remove_error);
+    std::filesystem::remove(en_path, remove_error);
   }
 
   if (failures != 0) {

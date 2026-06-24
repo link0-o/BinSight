@@ -27,13 +27,13 @@ BinSight 是一个用于扫描可执行文件并生成风险分析报告的 C++2
 Windows：
 
 ```powershell
-.\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
+.\bin\binsight.exe scan .\sample.exe
 ```
 
 Linux：
 
 ```bash
-./bin/binsight scan ./sample --provider none --out report.md --json report.json
+./bin/binsight scan ./sample
 ```
 
 发行包会包含 `rules/`、`knowledge/` 和 `docs/`。如果没有传 `--rules-dir` 或 `--knowledge-dir`，BinSight 会自动从发行包目录查找默认规则和知识库。
@@ -71,7 +71,27 @@ BinSight 遵守[工业组件优先法则](docs/zh-CN/DESIGN_PRINCIPLES.md)：成
 离线分析：
 
 ```bash
-./build/binsight scan ./sample --provider none --out report.md --json report.json
+./build/binsight scan ./sample
+```
+
+默认会生成：
+
+- `report.zh-CN.md`
+- `report.en.md`
+- `report.json`
+
+只生成单一语言 Markdown：
+
+```bash
+./build/binsight scan ./sample --report-lang zh-CN
+./build/binsight scan ./sample --report-lang en
+```
+
+交互式配置：
+
+```bash
+./build/binsight config wizard
+./build/binsight config show
 ```
 
 DeepSeek：
@@ -82,10 +102,17 @@ export DEEPSEEK_API_KEY=...
   --provider openai \
   --base-url https://api.deepseek.com \
   --model deepseek-chat \
-  --api-key-env DEEPSEEK_API_KEY \
-  --out report.md \
-  --json report.json
+  --api-key-env DEEPSEEK_API_KEY
 ```
+
+Windows 上可以把 API key 保存到 Windows Credential Manager：
+
+```powershell
+.\bin\binsight.exe config set-key --provider deepseek
+.\bin\binsight.exe config wizard
+```
+
+配置文件只保存非敏感配置和凭据引用名，不会把 API key 写入报告、JSON 或明文配置文件。
 
 OpenAI：
 
@@ -125,7 +152,7 @@ Ollama：
 
 ## 输出
 
-Markdown 报告采用中英双语标题和字段，便于中文阅读和英文术语对照。JSON 报告保持结构化字段，面向自动化、测试和后续 MCP/agent 集成。风险结论会尽量指向明确证据，例如导入函数、可疑字符串、节区、库、RAG 上下文和可选反汇编片段。
+Markdown 报告按语言分离，默认同时输出中文和英文两个版本。JSON 报告保持结构化英文字段，面向自动化、测试和后续 MCP/agent 集成。风险结论会尽量指向明确证据，例如导入函数、可疑字符串、节区、库、RAG 上下文和可选反汇编片段。
 
 ## 发行版
 

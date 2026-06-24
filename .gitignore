@@ -1,6 +1,7 @@
 build/
 *.md.tmp
 report.md
+report.*.md
 report.json
 report-*.md
 report-*.json
