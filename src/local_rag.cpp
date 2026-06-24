@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <regex>
 #include <set>
 
@@ -31,8 +32,8 @@ std::string first_heading_or_stem(const std::filesystem::path& path, const std::
 std::string excerpt(const std::string& content) {
   std::string text = content;
   text.erase(std::remove(text.begin(), text.end(), '\r'), text.end());
-  if (text.size() > 420) {
-    text = text.substr(0, 420) + "...";
+  if (text.size() > 1200) {
+    text = text.substr(0, 1200) + "...";
   }
   return text;
 }
@@ -48,23 +49,31 @@ std::vector<RagEntry> LocalRagIndex::retrieve(const std::filesystem::path& knowl
     return {};
   }
 
-  std::set<std::string> query_tokens;
+  std::map<std::string, int> query_tokens;
+  auto add_token = [&](const std::string& token, int weight) {
+    const std::string normalized = lowercase(token);
+    if (normalized.size() >= 3) {
+      query_tokens[normalized] += weight;
+    }
+  };
   for (const auto& finding : report.rule_findings) {
+    add_token(finding.id, 8);
+    add_token(finding.title, 3);
     for (const auto& token : tokens_from_text(finding.id + " " + finding.title + " " +
                                               finding.description)) {
-      query_tokens.insert(token);
+      add_token(token, 2);
     }
     for (const auto& tag : finding.tags) {
-      query_tokens.insert(lowercase(tag));
+      add_token(tag, 6);
     }
   }
   for (const auto& item : report.imports) {
     for (const auto& token : tokens_from_text(item.library + " " + item.symbol)) {
-      query_tokens.insert(token);
+      add_token(token, 4);
     }
   }
   for (const auto& item : report.strings) {
-    query_tokens.insert(lowercase(item.category));
+    add_token(item.category, 4);
   }
 
   std::vector<RagEntry> entries;
@@ -81,12 +90,9 @@ std::vector<RagEntry> LocalRagIndex::retrieve(const std::filesystem::path& knowl
     }
     const std::string lower_content = lowercase(content + " " + entry.path().stem().string());
     int score = 0;
-    for (const auto& token : query_tokens) {
-      if (token.size() < 3) {
-        continue;
-      }
+    for (const auto& [token, weight] : query_tokens) {
       if (lower_content.find(token) != std::string::npos) {
-        score += 1;
+        score += weight;
       }
     }
     if (score > 0) {
@@ -108,4 +114,3 @@ std::vector<RagEntry> LocalRagIndex::retrieve(const std::filesystem::path& knowl
 }
 
 }  // namespace binsight
-

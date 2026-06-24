@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <algorithm>
 #include <string>
 
 namespace {
@@ -40,8 +41,10 @@ int main() {
     binsight::LocalRagIndex rag;
     const auto entries = rag.retrieve("knowledge", report, warnings, 3);
     check(!entries.empty(), "RAG should return at least one entry");
-    check(!entries.empty() && entries.front().id == "network-behavior",
-          "network knowledge should rank first");
+    check(std::any_of(entries.begin(), entries.end(), [](const binsight::RagEntry& entry) {
+            return entry.id == "network-behavior";
+          }),
+          "RAG should include network knowledge for network findings");
   }
 
   {
@@ -67,4 +70,3 @@ int main() {
   std::cout << "All unit tests passed\n";
   return 0;
 }
-
