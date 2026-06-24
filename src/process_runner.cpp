@@ -34,6 +34,12 @@ ToolResult ProcessRunner::run(const std::vector<std::string>& args, int timeout_
     if (i != 0) {
       command << ' ';
     }
+#ifdef _WIN32
+    if (i == 0 && args[i].find_first_of(" \t\"&|<>()^") == std::string::npos) {
+      command << args[i];
+      continue;
+    }
+#endif
     command << shell_quote(args[i]);
   }
   command << " 2>&1";
