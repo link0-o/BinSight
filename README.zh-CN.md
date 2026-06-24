@@ -18,6 +18,8 @@ BinSight 是一个用于扫描可执行文件并生成风险分析报告的 C++2
 
 ## 构建
 
+如果你是在 Windows 上使用，请先看 [Windows 使用指南](docs/zh-CN/WINDOWS.md)。当前推荐方式是 WSL2，不是直接生成原生 `binsight.exe`。
+
 ```bash
 cmake -S . -B build -G Ninja
 cmake --build build
@@ -65,9 +67,13 @@ Ollama：
 - [报告结构](docs/zh-CN/REPORT_SCHEMA.md)
 - [LLM 与 RAG](docs/zh-CN/LLM_RAG.md)
 - [开发说明](docs/zh-CN/DEVELOPMENT.md)
+- [Windows 使用指南](docs/zh-CN/WINDOWS.md)
 - [Skill 与 MCP 计划](docs/zh-CN/SKILL_MCP_PLAN.md)
 
 ## 设计边界
 
 BinSight 第一版不是全自主 agent。扫描流程固定执行，结果可重复、可测试、可审计。未来可以在稳定 JSON 报告之上添加 MCP 或交互式 agent，用于追问和深挖，但核心取证逻辑仍应保持确定性。
 
+## 输出
+
+Markdown 报告采用中英双语标题和字段，便于中文阅读和英文术语对照。JSON 报告保持结构化字段，面向自动化、测试和后续 MCP/agent 集成。

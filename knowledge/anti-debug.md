@@ -1,3 +1,12 @@
+---
+id: anti-debug
+rules: [anti-debug]
+apis: [IsDebuggerPresent, CheckRemoteDebuggerPresent, NtQueryInformationProcess, OutputDebugStringA, OutputDebugStringW, ptrace]
+strings: [debugger, anti-debug, BeingDebugged, TracerPid, sandbox, vmware, virtualbox]
+tags: [anti-debug, anti-analysis, evasion, sandbox]
+platforms: [windows, linux]
+---
+
 # Anti Debugging
 
 Search tags: anti-debug anti-debugging debugger sandbox evasion IsDebuggerPresent CheckRemoteDebuggerPresent ptrace BeingDebugged TracerPid

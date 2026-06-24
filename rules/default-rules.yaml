@@ -5,7 +5,7 @@ rules:
     tags: [command-execution, process]
     match:
       functions: [system, popen, execl, execve, WinExec, ShellExecuteA, ShellExecuteW, CreateProcessA, CreateProcessW]
-      strings_regex: ["(?i)(/bin/sh|cmd\\.exe|powershell|bash -c)"]
+      strings_regex: ["(?i)(/bin/sh|cmd\\.exe|powershell|bash -c|shutdown\\s+/[a-z]|title\\s+)"]
     description: The binary contains imports or strings associated with launching commands or child processes.
     recommendation: Review call sites and confirm whether command construction includes untrusted input.
 
@@ -46,4 +46,3 @@ rules:
       section_flags: [WX, WAX]
     description: A section appears both writable and executable, which can support unpacking or runtime code modification.
     recommendation: Verify whether the section is expected and whether platform hardening is enabled.
-

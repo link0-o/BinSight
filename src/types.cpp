@@ -128,8 +128,12 @@ std::string to_json(const AnalysisReport& report) {
     if (&item != &report.rag_context.front()) out << ',';
     out << "{\"id\":"; json_string(out, item.id);
     out << ",\"title\":"; json_string(out, item.title);
+    out << ",\"source\":"; json_string(out, item.source);
     out << ",\"score\":" << item.score;
-    out << ",\"excerpt\":"; json_string(out, item.excerpt); out << '}';
+    out << ",\"excerpt\":"; json_string(out, item.excerpt);
+    out << ",\"matched_terms\":"; json_string_array(out, item.matched_terms);
+    out << ",\"match_reasons\":"; json_string_array(out, item.match_reasons);
+    out << '}';
   }
   out << "],\n";
 

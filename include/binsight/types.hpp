@@ -76,8 +76,11 @@ struct RuleFinding {
 struct RagEntry {
   std::string id;
   std::string title;
+  std::string source;
   int score = 0;
   std::string excerpt;
+  std::vector<std::string> matched_terms;
+  std::vector<std::string> match_reasons;
 };
 
 struct AiAnalysis {

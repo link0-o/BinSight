@@ -1,3 +1,12 @@
+---
+id: crypto-packing-obfuscation
+rules: [writable-executable-section]
+apis: [VirtualAlloc, VirtualAllocEx, mmap, mprotect, VirtualProtect, NtProtectVirtualMemory, LoadLibraryA, LoadLibraryW, GetProcAddress, dlopen, dlsym]
+strings: [AES, RC4, ChaCha20, zlib, inflate, UPX, base64]
+tags: [memory, packing, obfuscation, crypto, high-entropy]
+platforms: [windows, linux]
+---
+
 # Crypto, Packing, and Obfuscation
 
 Search tags: writable-executable-section memory packing obfuscation crypto high-entropy VirtualAlloc VirtualProtect mmap mprotect LoadLibrary GetProcAddress dlopen dlsym UPX

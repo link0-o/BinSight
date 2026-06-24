@@ -1,3 +1,12 @@
+---
+id: process-injection
+rules: [process-injection]
+apis: [OpenProcess, NtOpenProcess, VirtualAllocEx, NtAllocateVirtualMemory, WriteProcessMemory, CreateRemoteThread, NtCreateThreadEx, QueueUserAPC, SetWindowsHookEx, VirtualProtectEx, NtProtectVirtualMemory]
+strings: [rundll32, svchost, explorer.exe, shellcode]
+tags: [process-injection, injection, windows, remote-thread]
+platforms: [windows]
+---
+
 # Process Injection
 
 Search tags: process-injection injection windows OpenProcess VirtualAllocEx WriteProcessMemory CreateRemoteThread NtCreateThreadEx QueueUserAPC SetWindowsHookEx shellcode

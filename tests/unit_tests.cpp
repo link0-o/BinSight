@@ -24,8 +24,8 @@ void check(bool condition, const std::string& message) {
 int main() {
   {
     binsight::StringScanner scanner;
-    const auto results = scanner.scan("https://example.test/a\n/bin/sh\nnormal text\npassword=secret\n");
-    check(results.size() == 3, "StringScanner should find three suspicious strings");
+    const auto results = scanner.scan("https://example.test/a\n/bin/sh\nshutdown /s /t 0\nnormal text\npassword=secret\n");
+    check(results.size() == 4, "StringScanner should find four suspicious strings");
     check(!results.empty() && results[0].category == "url", "first string should be URL");
   }
 
@@ -45,6 +45,44 @@ int main() {
             return entry.id == "network-behavior";
           }),
           "RAG should include network knowledge for network findings");
+  }
+
+  {
+    binsight::AnalysisReport report;
+    binsight::RuleFinding finding;
+    finding.id = "dangerous-command-exec";
+    finding.title = "Command execution capability";
+    finding.tags = {"command-execution", "process"};
+    finding.evidence = {"function:system", "string:shell:shutdown /s /t 0"};
+    report.rule_findings.push_back(finding);
+    report.imports.push_back({"msvcrt.dll", "system"});
+    report.strings.push_back({"shutdown /s /t 0", "shell"});
+
+    std::vector<std::string> warnings;
+    binsight::LocalRagIndex rag;
+    const auto entries = rag.retrieve("knowledge", report, warnings, 5);
+    check(!entries.empty(), "command execution RAG should return entries");
+    check(!entries.empty() && entries.front().id == "command-execution",
+          "command execution knowledge should rank first");
+    check(!entries.empty() && !entries.front().match_reasons.empty(),
+          "RAG entries should explain match reasons");
+  }
+
+  {
+    binsight::AnalysisReport report;
+    binsight::RuleFinding finding;
+    finding.id = "process-injection";
+    finding.title = "Process injection capability";
+    finding.tags = {"injection", "windows"};
+    finding.evidence = {"function:CreateRemoteThread"};
+    report.rule_findings.push_back(finding);
+    report.imports.push_back({"KERNEL32.dll", "CreateRemoteThread"});
+
+    std::vector<std::string> warnings;
+    binsight::LocalRagIndex rag;
+    const auto entries = rag.retrieve("knowledge", report, warnings, 5);
+    check(!entries.empty() && entries.front().id == "process-injection",
+          "process injection knowledge should rank first");
   }
 
   {

@@ -1,3 +1,12 @@
+---
+id: network-behavior
+rules: [network-capability]
+apis: [socket, connect, send, recv, getaddrinfo, inet_addr, InternetOpenA, InternetOpenW, InternetConnectA, InternetConnectW, WinHttpOpen, URLDownloadToFileA, WSAStartup]
+strings: [http://, https://, Authorization, Bearer, websocket, tcp, udp]
+tags: [network, networking, command-and-control, downloader]
+platforms: [windows, linux]
+---
+
 # Network Behavior
 
 Search tags: network-capability network networking socket connect send recv getaddrinfo InternetOpen InternetConnect WinHttpOpen URLDownloadToFile WSAStartup http https domain ip

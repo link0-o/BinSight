@@ -1,3 +1,12 @@
+---
+id: pe-imports
+rules: []
+apis: [CreateProcessA, CreateProcessW, ShellExecuteA, WinExec, OpenProcess, VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, NtCreateThreadEx, VirtualAlloc, VirtualProtect, LoadLibraryA, LoadLibraryW, GetProcAddress, WinHttpOpen, InternetOpenA, URLDownloadToFileA, WSAStartup, RegSetValueExA]
+strings: [schtasks, service, registry, dll, rundll32]
+tags: [pe, imports, windows, dll, api]
+platforms: [windows]
+---
+
 # PE Imports
 
 Search tags: pe imports windows dll api process-injection command-execution network-capability persistence CreateProcess VirtualAllocEx WriteProcessMemory CreateRemoteThread WinHttpOpen RegSetValueEx

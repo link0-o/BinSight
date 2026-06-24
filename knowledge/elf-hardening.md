@@ -1,3 +1,12 @@
+---
+id: elf-hardening
+rules: []
+apis: [__stack_chk_fail]
+strings: [PIE, RELRO, NX, stack-canary, stripped]
+tags: [elf, hardening, executable, security, weakness]
+platforms: [linux]
+---
+
 # ELF Hardening
 
 Search tags: elf hardening PIE RELRO NX stack-canary __stack_chk_fail stripped executable security weakness

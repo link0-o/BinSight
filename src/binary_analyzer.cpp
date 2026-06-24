@@ -151,25 +151,44 @@ void BinaryAnalyzer::analyze_elf(const ScanOptions& options, AnalysisReport& rep
 }
 
 void BinaryAnalyzer::analyze_pe(const ScanOptions& options, AnalysisReport& report) const {
-  const ToolResult headers = runner_.run({"objdump", "-x", options.binary_path.string()});
+  const ToolResult headers = runner_.run({"objdump", "-p", options.binary_path.string()});
   if (headers.exit_code == 0) {
     std::string current_dll;
+    bool in_imports = false;
+    std::set<std::string> seen_imports;
     std::regex dll_re(R"(DLL Name:\s*(.+))");
-    std::regex import_re(R"(^\s*(?:[0-9a-fA-F]+\s+)?([A-Za-z_][A-Za-z0-9_@$?]+)\s*$)");
+    std::regex import_re(R"(^\s*[0-9a-fA-F]+\s+<none>\s+[0-9a-fA-F]+\s+(\S+)\s*$)");
     for (const auto& line : split_lines(headers.output)) {
       std::smatch match;
+      if (line.find("The Import Tables") != std::string::npos) {
+        in_imports = true;
+        continue;
+      }
+      if (line.find("The Export Tables") != std::string::npos ||
+          line.find("The Function Table") != std::string::npos ||
+          line.find("PE File Base Relocations") != std::string::npos) {
+        in_imports = false;
+        current_dll.clear();
+      }
+      if (!in_imports) {
+        continue;
+      }
       if (std::regex_search(line, match, dll_re)) {
         current_dll = trim(match[1].str());
-        report.imports.push_back({current_dll, ""});
+        const std::string key = current_dll + "\n";
+        if (seen_imports.insert(key).second) {
+          report.imports.push_back({current_dll, ""});
+        }
       } else if (!current_dll.empty() && std::regex_match(line, match, import_re)) {
         const std::string symbol = trim(match[1].str());
-        if (symbol != "Name" && symbol.size() > 2) {
+        const std::string key = current_dll + "\n" + symbol;
+        if (!symbol.empty() && seen_imports.insert(key).second) {
           report.imports.push_back({current_dll, symbol});
         }
       }
     }
   } else {
-    report.warnings.push_back("objdump -x failed: " + headers.output);
+    report.warnings.push_back("objdump -p failed: " + headers.output);
   }
 
   const ToolResult sections = runner_.run({"objdump", "-h", options.binary_path.string()});
@@ -258,4 +277,3 @@ void BinaryAnalyzer::extract_disassembly(const ScanOptions& options, AnalysisRep
 }
 
 }  // namespace binsight
-

@@ -62,4 +62,4 @@ Ollama analysis:
 
 ## Output
 
-The Markdown report is intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, and disassembly snippets.
+The Markdown report is bilingual English/Chinese and intended for humans. The JSON report is intended for automation, tests, and future MCP/agent integration. Risk conclusions include evidence references such as imported functions, suspicious strings, sections, libraries, and disassembly snippets.

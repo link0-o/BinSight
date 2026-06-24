@@ -37,3 +37,8 @@ ctest --test-dir build --output-on-failure
 
 工具缺失或解析失败应记录到 `warnings`，不应直接导致程序崩溃。
 
+## Windows 说明
+
+当前原型优先支持 Linux/WSL 环境运行。Windows 用户建议先通过 WSL2 使用 BinSight，详见 [Windows 使用指南](WINDOWS.md)。
+
+原生 Windows 可执行文件不是当前第一版的推荐部署方式，因为 `ProcessRunner` 仍使用 POSIX 的 `popen`、`timeout` 和 `sys/wait.h`，并且扫描链路依赖 `file/readelf/objdump/strings` 这类 Unix/binutils 工具。

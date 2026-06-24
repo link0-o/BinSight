@@ -1,3 +1,12 @@
+---
+id: command-execution
+rules: [dangerous-command-exec]
+apis: [system, popen, execl, execle, execlp, execv, execve, posix_spawn, WinExec, ShellExecuteA, ShellExecuteW, CreateProcessA, CreateProcessW]
+strings: [shutdown, /bin/sh, /bin/bash, bash -c, cmd.exe, powershell, wscript, cscript, curl, wget, schtasks]
+tags: [command-execution, process, shell]
+platforms: [windows, linux]
+---
+
 # Command Execution
 
 Search tags: dangerous-command-exec command-execution process shell system popen execve WinExec ShellExecute CreateProcess powershell cmd.exe bash
