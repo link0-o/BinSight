@@ -1,0 +1,8 @@
+build/
+*.md.tmp
+report.md
+report.json
+.cache/
+.agents/
+.codex/
+

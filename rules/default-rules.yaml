@@ -1,0 +1,49 @@
+rules:
+  - id: dangerous-command-exec
+    title: Command execution capability
+    severity: high
+    tags: [command-execution, process]
+    match:
+      functions: [system, popen, execl, execve, WinExec, ShellExecuteA, ShellExecuteW, CreateProcessA, CreateProcessW]
+      strings_regex: ["(?i)(/bin/sh|cmd\\.exe|powershell|bash -c)"]
+    description: The binary contains imports or strings associated with launching commands or child processes.
+    recommendation: Review call sites and confirm whether command construction includes untrusted input.
+
+  - id: network-capability
+    title: Network communication capability
+    severity: medium
+    tags: [network]
+    match:
+      functions: [socket, connect, send, recv, InternetOpenA, InternetOpenW, InternetConnectA, InternetConnectW, WinHttpOpen, URLDownloadToFileA]
+      strings_regex: ["(?i)(https?://|[0-9]{1,3}(\\.[0-9]{1,3}){3})"]
+    description: The binary contains networking imports or network-looking strings.
+    recommendation: Verify destinations, protocol use, and whether network behavior is expected.
+
+  - id: process-injection
+    title: Process injection capability
+    severity: high
+    tags: [injection, windows]
+    match:
+      functions: [OpenProcess, VirtualAllocEx, WriteProcessMemory, CreateRemoteThread, NtCreateThreadEx, QueueUserAPC]
+    description: The binary imports APIs commonly used for remote process manipulation.
+    recommendation: Inspect whether these APIs are used for legitimate debugging/automation or injection.
+
+  - id: anti-debug
+    title: Anti-debugging indicators
+    severity: medium
+    tags: [anti-debug]
+    match:
+      functions: [IsDebuggerPresent, CheckRemoteDebuggerPresent, ptrace]
+      strings_regex: ["(?i)(debugger|anti-debug|beingdebugged)"]
+    description: The binary contains anti-debugging indicators.
+    recommendation: Treat anti-analysis behavior as suspicious unless justified by product requirements.
+
+  - id: writable-executable-section
+    title: Writable executable section
+    severity: high
+    tags: [memory, packing]
+    match:
+      section_flags: [WX, WAX]
+    description: A section appears both writable and executable, which can support unpacking or runtime code modification.
+    recommendation: Verify whether the section is expected and whether platform hardening is enabled.
+
