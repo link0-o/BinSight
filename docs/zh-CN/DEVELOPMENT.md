@@ -61,8 +61,26 @@ fallback parser 在 LIEF 不可用时覆盖最低限度证据：
 
 - `objdump` 或 `llvm-objdump`：提取有限反汇编片段。
 - `curl`：仅 `openai` 或 `ollama` 模式需要。
+- `docker`：仅显式执行 `observe linux-docker` 时需要。
 
 工具缺失或解析失败应记录到 `warnings`，不应直接导致程序崩溃。
+
+## Linux Docker 动态观测
+
+构建轻量 observer 镜像：
+
+```bash
+docker build -t binsight-observer:latest docker/linux-observer
+```
+
+只有显式接受风险时才运行：
+
+```bash
+./build/binsight observe linux-docker ./sample --out dynamic.json --i-understand-risk
+./build/binsight scan ./sample --dynamic-report dynamic.json
+```
+
+该模式**不是**恶意软件级别沙箱。它使用 Docker、`strace`、默认禁网和资源限制来采集轻量运行时证据。
 
 ## 打包
 
@@ -72,7 +90,7 @@ fallback parser 在 LIEF 不可用时覆盖最低限度证据：
 cmake --build build --target package
 ```
 
-发行包会包含可执行文件、`rules/`、`knowledge/`、`docs/`、中英文 README 和 `LICENSE`。
+发行包会包含可执行文件、`rules/`、`knowledge/`、`docs/`、`docker/`、中英文 README 和 `LICENSE`。
 
 ## CI
 

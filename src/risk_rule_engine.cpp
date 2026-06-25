@@ -20,6 +20,9 @@ struct RuleSpec {
   std::vector<std::string> libraries;
   std::vector<std::string> string_regexes;
   std::vector<std::string> section_flags;
+  std::vector<std::string> section_names;
+  double section_entropy_min = 0.0;
+  int import_count_max = -1;
   std::string description;
   std::string recommendation;
 };
@@ -119,6 +122,20 @@ std::vector<RuleSpec> parse_rule_file(const std::filesystem::path& path,
       current.string_regexes = parse_inline_list(stripped);
     } else if (stripped.rfind("section_flags:", 0) == 0) {
       current.section_flags = parse_inline_list(stripped);
+    } else if (stripped.rfind("section_names:", 0) == 0) {
+      current.section_names = parse_inline_list(stripped);
+    } else if (stripped.rfind("section_entropy_min:", 0) == 0) {
+      try {
+        current.section_entropy_min = std::stod(value_after_colon(stripped));
+      } catch (...) {
+        warnings.push_back("invalid section_entropy_min in rule " + current.id);
+      }
+    } else if (stripped.rfind("import_count_max:", 0) == 0) {
+      try {
+        current.import_count_max = std::stoi(value_after_colon(stripped));
+      } catch (...) {
+        warnings.push_back("invalid import_count_max in rule " + current.id);
+      }
     } else if (stripped.rfind("description:", 0) == 0) {
       current.description = value_after_colon(stripped);
     } else if (stripped.rfind("recommendation:", 0) == 0) {
@@ -138,6 +155,10 @@ bool flags_match(const std::string& wanted, const std::string& observed) {
     if (observed.find(c) == std::string::npos) return false;
   }
   return true;
+}
+
+bool section_name_match(const std::string& wanted, const std::string& observed) {
+  return lowercase(observed).find(lowercase(wanted)) != std::string::npos;
 }
 
 }  // namespace
@@ -198,6 +219,24 @@ std::vector<RuleFinding> RiskRuleEngine::evaluate(const std::filesystem::path& r
           evidence.insert("section:" + section.name + ":" + section.flags);
         }
       }
+      for (const auto& wanted : rule.section_names) {
+        if (section_name_match(wanted, section.name)) {
+          evidence.insert("section-name:" + section.name);
+        }
+      }
+      if (rule.section_entropy_min > 0.0 && section.entropy >= rule.section_entropy_min) {
+        std::ostringstream entropy;
+        entropy.setf(std::ios::fixed);
+        entropy.precision(2);
+        entropy << section.entropy;
+        evidence.insert("section-entropy:" + section.name + ":" + entropy.str());
+      }
+    }
+
+    if (rule.import_count_max >= 0 &&
+        report.imports.size() <= static_cast<std::size_t>(rule.import_count_max) &&
+        report.target.format != BinaryFormat::Unknown) {
+      evidence.insert("import-count:" + std::to_string(report.imports.size()));
     }
 
     if (!evidence.empty()) {

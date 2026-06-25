@@ -14,6 +14,7 @@ option(BINSIGHT_USE_LIEF "Enable the LIEF-backed production PE/ELF parser" ON)
 add_library(binsight_core
   src/binary_analyzer.cpp
   src/config.cpp
+  src/dynamic_observer.cpp
   src/llm_client.cpp
   src/local_rag.cpp
   src/process_runner.cpp
@@ -79,7 +80,7 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS binsight RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(DIRECTORY rules knowledge docs DESTINATION .)
+install(DIRECTORY rules knowledge docs docker DESTINATION .)
 install(FILES README.md README.zh-CN.md LICENSE DESTINATION .)
 
 set(CPACK_PACKAGE_NAME "BinSight")

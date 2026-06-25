@@ -32,6 +32,7 @@ The package contains:
 - `rules/`
 - `knowledge/`
 - `docs/`
+- `docker/`
 - `README.md`
 - `README.zh-CN.md`
 - `LICENSE`
@@ -66,6 +67,7 @@ Linux:
 ```bash
 ./bin/binsight --help
 ./bin/binsight scan ./sample --provider none --out report.md --json report.json
+docker build -t binsight-observer:latest docker/linux-observer
 ```
 
 The scan should work without API keys. Missing optional disassembly tools should appear as warnings, not crashes.

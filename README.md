@@ -13,6 +13,7 @@ BinSight scans executable files and produces evidence-grounded risk reports. It 
 - Suspicious ASCII and UTF-16LE string extraction without an external `strings` command.
 - Optional bounded disassembly snippets when `objdump` or `llvm-objdump` is available.
 - YAML-style risk rules, local Markdown RAG context, and Markdown/JSON reports.
+- Safe-by-default static mode plus explicit Linux Docker dynamic observation.
 - LLM providers:
   - `none` for offline rule-only reports.
   - `openai` for OpenAI-compatible chat completions, including DeepSeek.
@@ -37,7 +38,7 @@ Linux:
 ./bin/binsight scan ./sample
 ```
 
-The release package includes `rules/`, `knowledge/`, and `docs/`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
+The release package includes `rules/`, `knowledge/`, `docs/`, and `docker/`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
 
 ## Build From Source
 
@@ -74,6 +75,20 @@ Offline analysis:
 ```bash
 ./build/binsight scan ./sample
 ```
+
+Static analysis is the default and never executes the target.
+
+Linux lightweight dynamic observation:
+
+```bash
+docker build -t binsight-observer:latest docker/linux-observer
+./build/binsight observe linux-docker ./sample \
+  --out dynamic.json \
+  --i-understand-risk
+./build/binsight scan ./sample --dynamic-report dynamic.json
+```
+
+Docker observation is not a malware-grade sandbox. It uses constrained container settings and disables networking by default, but containers share the host kernel. Use it only on lab machines or samples you are prepared to execute. For high-risk packed malware, use a dedicated VM or professional sandbox.
 
 By default BinSight writes:
 

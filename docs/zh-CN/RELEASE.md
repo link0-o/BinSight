@@ -32,6 +32,7 @@ cmake --build build --target package
 - `rules/`
 - `knowledge/`
 - `docs/`
+- `docker/`
 - `README.md`
 - `README.zh-CN.md`
 - `LICENSE`
@@ -66,6 +67,7 @@ Linux：
 ```bash
 ./bin/binsight --help
 ./bin/binsight scan ./sample --provider none --out report.md --json report.json
+docker build -t binsight-observer:latest docker/linux-observer
 ```
 
 无 API key 时也应该能生成离线规则报告。缺少可选反汇编工具时，只应在报告中出现 warning，不应崩溃。

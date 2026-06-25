@@ -1,5 +1,6 @@
 #include <binsight/binary_analyzer.hpp>
 #include <binsight/config.hpp>
+#include <binsight/dynamic_observer.hpp>
 #include <binsight/llm_client.hpp>
 #include <binsight/local_rag.hpp>
 #include <binsight/report_writer.hpp>
@@ -33,7 +34,10 @@ void print_usage() {
       << "                 [--provider none|openai|ollama] [--model name]\n"
       << "                 [--base-url url] [--api-key-env ENV] [--api-key-name NAME]\n"
       << "                 [--knowledge-dir knowledge] [--rules-dir rules]\n"
-      << "                 [--max-disasm-snippets N]\n"
+      << "                 [--max-disasm-snippets N] [--dynamic-report dynamic.json]\n"
+      << "  binsight observe linux-docker <binary> --out dynamic.json --i-understand-risk\n"
+      << "                 [--image binsight-observer:latest] [--timeout 30]\n"
+      << "                 [--network none|bridge]\n"
       << "  binsight config wizard\n"
       << "  binsight config show\n"
       << "  binsight config set-key --provider deepseek|openai [--name NAME]\n"
@@ -176,6 +180,24 @@ std::vector<std::pair<std::filesystem::path, binsight::ReportLanguage>> markdown
   }
   return {{language_path(base, "zh-CN"), binsight::ReportLanguage::Chinese},
           {language_path(base, "en"), binsight::ReportLanguage::English}};
+}
+
+bool has_static_inconclusive_finding(const binsight::AnalysisReport& report) {
+  for (const auto& finding : report.rule_findings) {
+    for (const auto& tag : finding.tags) {
+      const auto lower = binsight::lowercase(tag);
+      if (lower == "static-inconclusive" || lower == "packing" || lower == "obfuscation") {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+std::string dynamic_risk_notice() {
+  return "Dynamic observation may execute the target. Docker reduces accidental host interaction "
+         "but is not a malware-grade sandbox because containers share the host kernel. Use only on "
+         "a lab machine or samples you are prepared to execute.";
 }
 
 int handle_config(int argc, char** argv) {
@@ -332,6 +354,8 @@ int handle_scan(int argc, char** argv) {
       options.rules_dir_explicit = true;
     } else if (arg == "--max-disasm-snippets" && next_value(i, argc, argv, value)) {
       options.max_disasm_snippets = std::stoi(value);
+    } else if (arg == "--dynamic-report" && next_value(i, argc, argv, value)) {
+      options.dynamic_report_path = value;
     } else {
       std::cerr << "binsight: invalid or incomplete option: " << arg << '\n';
       print_usage();
@@ -362,8 +386,28 @@ int handle_scan(int argc, char** argv) {
     binsight::AnalysisReport report = analyzer.analyze(options);
     report.warnings.insert(report.warnings.end(), config_warnings.begin(), config_warnings.end());
 
+    if (!options.dynamic_report_path.empty()) {
+      std::string error;
+      const auto dynamic = binsight::read_dynamic_observations(options.dynamic_report_path, error);
+      if (dynamic) {
+        report.analysis_mode = binsight::AnalysisMode::StaticWithDynamicReport;
+        report.dynamic_observations = *dynamic;
+        report.dynamic_observations.present = true;
+      } else {
+        report.warnings.push_back("failed to read dynamic report: " + error);
+      }
+    }
+
     binsight::RiskRuleEngine rules;
     report.rule_findings = rules.evaluate(options.rules_dir, report, report.warnings);
+    if (has_static_inconclusive_finding(report)) {
+      report.warnings.push_back(
+          "static_inconclusive: packing or obfuscation indicators were observed; static evidence may be incomplete");
+      if (report.target.format == binsight::BinaryFormat::PE) {
+        report.warnings.push_back(
+            "windows_dynamic_not_automatic: BinSight does not automatically execute Windows samples; use a dedicated VM, professional sandbox, or imported Sysmon events for high-risk packed samples");
+      }
+    }
 
     binsight::LocalRagIndex rag;
     report.rag_context = rag.retrieve(options.knowledge_dir, report, report.warnings);
@@ -389,6 +433,69 @@ int handle_scan(int argc, char** argv) {
   }
 }
 
+int handle_observe(int argc, char** argv) {
+  if (argc < 3) {
+    print_usage();
+    return 1;
+  }
+  const std::string mode = argv[2];
+  if (mode != "linux-docker") {
+    std::cerr << "binsight: unsupported observe mode: " << mode << '\n';
+    print_usage();
+    return 1;
+  }
+  if (argc < 4) {
+    std::cerr << "binsight: observe linux-docker requires a binary path\n";
+    print_usage();
+    return 1;
+  }
+
+  binsight::DockerObserveOptions options;
+  options.binary_path = argv[3];
+  for (int i = 4; i < argc; ++i) {
+    const std::string arg = argv[i];
+    std::string value;
+    if (arg == "--out" && next_value(i, argc, argv, value)) {
+      options.output_path = value;
+    } else if (arg == "--image" && next_value(i, argc, argv, value)) {
+      options.image = value;
+    } else if (arg == "--timeout" && next_value(i, argc, argv, value)) {
+      options.timeout_seconds = std::stoi(value);
+    } else if (arg == "--network" && next_value(i, argc, argv, value)) {
+      options.network_mode = value;
+    } else if (arg == "--i-understand-risk") {
+      options.risk_accepted = true;
+    } else {
+      std::cerr << "binsight: invalid or incomplete observe option: " << arg << '\n';
+      print_usage();
+      return 1;
+    }
+  }
+
+  if (!options.risk_accepted) {
+    std::cerr << "binsight: refusing to run dynamic observation without --i-understand-risk\n\n"
+              << dynamic_risk_notice() << '\n';
+    return 2;
+  }
+  if (options.network_mode != "none" && options.network_mode != "bridge") {
+    std::cerr << "binsight: observe linux-docker network mode must be none or bridge\n";
+    return 1;
+  }
+
+  std::vector<std::string> warnings;
+  binsight::LinuxDockerObserver observer{binsight::ProcessRunner{}};
+  const auto observations = observer.observe(options, warnings);
+  if (!observations.present) {
+    std::cerr << "binsight: dynamic observation failed to start\n";
+    return 1;
+  }
+  std::cout << "Dynamic report: " << options.output_path << '\n';
+  if (!warnings.empty()) {
+    std::cout << "Warnings: " << warnings.size() << '\n';
+  }
+  return warnings.empty() ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -402,6 +509,9 @@ int main(int argc, char** argv) {
   }
   if (command == "config") {
     return handle_config(argc, argv);
+  }
+  if (command == "observe") {
+    return handle_observe(argc, argv);
   }
   std::cerr << "binsight: unknown command: " << command << '\n';
   print_usage();

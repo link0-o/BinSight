@@ -1,7 +1,9 @@
 #include <binsight/binary_analyzer.hpp>
+#include <binsight/dynamic_observer.hpp>
 #include <binsight/local_rag.hpp>
 #include <binsight/process_runner.hpp>
 #include <binsight/report_writer.hpp>
+#include <binsight/risk_rule_engine.hpp>
 #include <binsight/string_scanner.hpp>
 
 #include <algorithm>
@@ -192,10 +194,67 @@ int main(int argc, char** argv) {
   }
 
   {
+    std::cerr << "[unit] dynamic observation JSON\n";
+    binsight::DynamicObservations dynamic;
+    dynamic.present = true;
+    dynamic.platform = "linux";
+    dynamic.mode = "linux-docker";
+    dynamic.timeout_seconds = 30;
+    dynamic.exit_code = 0;
+    dynamic.network_mode = "none";
+    dynamic.process_events.push_back({"execve", 0, 0, "/sample/app", "\"/sample/app\""});
+    dynamic.file_events.push_back({"drop.bin", "artifact", 7, "fnv1a64:abc"});
+    dynamic.network_events.push_back({"connect", "", "connect(AF_INET)"});
+    dynamic.syscall_summary.push_back("execve:1");
+    dynamic.warnings.push_back("test warning");
+    const auto json = binsight::to_json(dynamic);
+    std::string error;
+    const auto parsed = binsight::dynamic_observations_from_json(json, error);
+    check(parsed.has_value(), "dynamic observations JSON should parse");
+    check(parsed && parsed->present, "dynamic observations should remain present");
+    check(parsed && parsed->mode == "linux-docker", "dynamic observations should keep mode");
+    check(parsed && !parsed->process_events.empty() && parsed->process_events.front().image == "/sample/app",
+          "dynamic observations should keep process events");
+    check(parsed && !parsed->file_events.empty() && parsed->file_events.front().path == "drop.bin",
+          "dynamic observations should keep file events");
+  }
+
+  {
+    std::cerr << "[unit] packed rules\n";
+    binsight::AnalysisReport report;
+    report.target.format = binsight::BinaryFormat::ELF;
+    report.target.format_name = "ELF";
+    report.imports = {{"libc.so.6", "printf"}, {"libc.so.6", "puts"}, {"libc.so.6", "exit"},
+                      {"libc.so.6", "malloc"}};
+    binsight::SectionInfo packed;
+    packed.name = ".packed";
+    packed.flags = "AX";
+    packed.size = 4096;
+    packed.entropy = 7.8;
+    report.sections.push_back(packed);
+    std::vector<std::string> warnings;
+    binsight::RiskRuleEngine rules;
+    const auto findings = rules.evaluate("rules", report, warnings);
+    check(std::any_of(findings.begin(), findings.end(), [](const binsight::RuleFinding& finding) {
+            return finding.id == "high-entropy-section";
+          }),
+          "high entropy section should trigger packed rule");
+    check(std::any_of(findings.begin(), findings.end(), [](const binsight::RuleFinding& finding) {
+            return finding.id == "packer-section-name";
+          }),
+          "packer section name should trigger packed rule");
+  }
+
+  {
     std::cerr << "[unit] report writer\n";
     binsight::AnalysisReport report;
     report.target.path = "sample";
     report.target.format_name = "ELF";
+    report.analysis_mode = binsight::AnalysisMode::StaticWithDynamicReport;
+    report.dynamic_observations.present = true;
+    report.dynamic_observations.platform = "linux";
+    report.dynamic_observations.mode = "linux-docker";
+    report.dynamic_observations.network_mode = "none";
     report.ai_analysis.provider = "none";
     report.ai_analysis.summary = "No deterministic risk rules matched.";
 
@@ -210,13 +269,19 @@ int main(int argc, char** argv) {
     std::ifstream in(path);
     std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
     check(content.find("\"target\"") != std::string::npos, "JSON report should contain target");
+    check(content.find("\"analysis_mode\"") != std::string::npos, "JSON report should contain analysis mode");
+    check(content.find("\"dynamic_observations\"") != std::string::npos,
+          "JSON report should contain dynamic observations");
     std::ifstream zh_in(zh_path);
     std::string zh_content((std::istreambuf_iterator<char>(zh_in)), std::istreambuf_iterator<char>());
     check(zh_content.find("## 目标文件") != std::string::npos, "Chinese report should use Chinese headings");
+    check(zh_content.find("## 动态观测") != std::string::npos, "Chinese report should include dynamic section");
     check(zh_content.find("Target /") == std::string::npos, "Chinese report should not use mixed headings");
     std::ifstream en_in(en_path);
     std::string en_content((std::istreambuf_iterator<char>(en_in)), std::istreambuf_iterator<char>());
     check(en_content.find("## Target") != std::string::npos, "English report should use English headings");
+    check(en_content.find("## Dynamic Observations") != std::string::npos,
+          "English report should include dynamic section");
     check(en_content.find("目标文件") == std::string::npos, "English report should not use Chinese headings");
     std::error_code remove_error;
     std::filesystem::remove(path, remove_error);

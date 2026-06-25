@@ -61,8 +61,26 @@ Runtime scanning treats these tools as optional when available:
 
 - `objdump` or `llvm-objdump`: bounded disassembly snippets.
 - `curl`: only for `openai` or `ollama` providers.
+- `docker`: only for explicit `observe linux-docker`.
 
 Missing optional tools should produce warnings rather than process crashes.
+
+## Linux Docker Observation
+
+Build the lightweight observer image:
+
+```bash
+docker build -t binsight-observer:latest docker/linux-observer
+```
+
+Run observation only when you explicitly accept the risk:
+
+```bash
+./build/binsight observe linux-docker ./sample --out dynamic.json --i-understand-risk
+./build/binsight scan ./sample --dynamic-report dynamic.json
+```
+
+This mode is **not** a malware-grade sandbox. It uses Docker, `strace`, disabled networking by default, and resource limits to collect lightweight runtime evidence.
 
 ## Packaging
 
@@ -72,7 +90,7 @@ Local package:
 cmake --build build --target package
 ```
 
-Release packages include the executable, `rules/`, `knowledge/`, `docs/`, both READMEs, and `LICENSE`.
+Release packages include the executable, `rules/`, `knowledge/`, `docs/`, `docker/`, both READMEs, and `LICENSE`.
 
 ## CI
 

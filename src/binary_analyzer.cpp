@@ -6,7 +6,9 @@
 #endif
 
 #include <algorithm>
+#include <array>
 #include <cctype>
+#include <cmath>
 #include <fstream>
 #include <filesystem>
 #include <limits>
@@ -181,6 +183,37 @@ std::string pe_section_flags(std::uint32_t characteristics) {
   return flags;
 }
 
+double entropy_of_bytes(const unsigned char* data, std::size_t size) {
+  if (data == nullptr || size == 0) {
+    return 0.0;
+  }
+  std::array<std::size_t, 256> counts{};
+  for (std::size_t i = 0; i < size; ++i) {
+    ++counts[data[i]];
+  }
+  double entropy = 0.0;
+  for (const auto count : counts) {
+    if (count == 0) {
+      continue;
+    }
+    const double p = static_cast<double>(count) / static_cast<double>(size);
+    entropy -= p * std::log2(p);
+  }
+  return entropy;
+}
+
+double entropy_of_range(const std::vector<unsigned char>& data, std::size_t offset, std::size_t size) {
+  if (offset >= data.size()) {
+    return 0.0;
+  }
+  const auto bounded = std::min(size, data.size() - offset);
+  return entropy_of_bytes(data.data() + offset, bounded);
+}
+
+double entropy_of_vector(const std::vector<unsigned char>& data) {
+  return entropy_of_bytes(data.data(), data.size());
+}
+
 #ifdef BINSIGHT_USE_LIEF
 void fill_target_common(const ScanOptions& options, TargetInfo& target) {
   target.path = options.binary_path.string();
@@ -327,6 +360,9 @@ bool BinaryAnalyzer::analyze_with_lief(const ScanOptions& options, AnalysisRepor
         SectionInfo section;
         section.name = lief_section.name();
         section.size = lief_section.size();
+        const auto content = lief_section.content();
+        const std::vector<unsigned char> bytes(content.begin(), content.end());
+        section.entropy = entropy_of_vector(bytes);
         section.flags = elf_section_flags(lief_section);
         if (section.name == ".symtab") {
           has_symtab = true;
@@ -378,6 +414,9 @@ bool BinaryAnalyzer::analyze_with_lief(const ScanOptions& options, AnalysisRepor
         section.name = lief_section.name();
         section.size = lief_section.sizeof_raw_data() != 0 ? lief_section.sizeof_raw_data()
                                                            : lief_section.virtual_size();
+        const auto content = lief_section.content();
+        const std::vector<unsigned char> bytes(content.begin(), content.end());
+        section.entropy = entropy_of_vector(bytes);
         section.flags = pe_section_flags(lief_section.characteristics());
         if (contains(section.flags, "W") && contains(section.flags, "X")) {
           section.risk_note = "writable and executable";
@@ -542,6 +581,7 @@ void BinaryAnalyzer::analyze_pe(const ScanOptions& options, AnalysisReport& repo
     SectionInfo section;
     section.name = pe_section.name;
     section.size = pe_section.raw_size != 0 ? pe_section.raw_size : pe_section.virtual_size;
+    section.entropy = entropy_of_range(data, pe_section.raw_pointer, section.size);
     section.flags = pe_section_flags(pe_section.characteristics);
     if (contains(section.flags, "W") && contains(section.flags, "X")) {
       section.risk_note = "writable and executable";

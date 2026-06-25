@@ -20,6 +20,7 @@ void markdown_list(std::ostringstream& out, const std::vector<std::string>& valu
 
 void write_target_en(std::ostringstream& out, const AnalysisReport& report) {
   out << "## Target\n\n";
+  out << "- Analysis mode: " << to_string(report.analysis_mode) << "\n";
   out << "- Path: `" << report.target.path << "`\n";
   out << "- Format: " << report.target.format_name << "\n";
   out << "- Architecture: " << report.target.architecture << "\n";
@@ -31,6 +32,7 @@ void write_target_en(std::ostringstream& out, const AnalysisReport& report) {
 
 void write_target_zh(std::ostringstream& out, const AnalysisReport& report) {
   out << "## 目标文件\n\n";
+  out << "- 分析模式：" << to_string(report.analysis_mode) << "\n";
   out << "- 路径：`" << report.target.path << "`\n";
   out << "- 格式：" << report.target.format_name << "\n";
   out << "- 架构：" << report.target.architecture << "\n";
@@ -44,8 +46,37 @@ std::string zh_known_text(const std::string& value) {
   if (value == "Command execution capability") return "命令执行能力";
   if (value == "Network communication capability") return "网络通信能力";
   if (value == "Process injection capability") return "进程注入能力";
+  if (value == "High entropy section") return "高熵节区";
+  if (value == "Packer-like section name") return "疑似加壳节区名";
+  if (value == "Sparse imports in executable") return "可执行文件导入项很少";
+  if (value == "Dynamic import resolution capability") return "动态导入解析能力";
+  if (value == "Writable executable section") return "可写可执行节区";
   if (value == "The binary contains imports or strings associated with launching commands or child processes.") {
     return "该文件包含与启动命令或子进程相关的导入函数或字符串。";
+  }
+  if (value == "A section has high byte entropy, which may indicate packing, compression, encryption, or embedded data.") {
+    return "某个节区具有较高字节熵，可能表示加壳、压缩、加密或嵌入数据。";
+  }
+  if (value == "The binary contains section names or strings commonly associated with packers or protectors.") {
+    return "该文件包含常见于加壳器或保护器的节区名或字符串。";
+  }
+  if (value == "The binary has very few static imports, which can occur in packed binaries or loaders that resolve APIs dynamically.") {
+    return "该文件静态导入项很少，这可能出现在加壳文件或运行时动态解析 API 的加载器中。";
+  }
+  if (value == "The binary can resolve APIs or libraries dynamically at runtime.") {
+    return "该文件可以在运行时动态解析 API 或库。";
+  }
+  if (value == "Treat static conclusions as incomplete and consider controlled dynamic observation for Linux samples or a dedicated sandbox for high-risk samples.") {
+    return "应将静态结论视为不完整；Linux 样本可考虑受控动态观测，高风险样本应使用专用沙箱。";
+  }
+  if (value == "Verify whether the packing is expected. Strong packers can hide imports and strings from static analysis.") {
+    return "确认加壳是否符合预期。强壳可能隐藏导入项和字符串，使静态分析证据不完整。";
+  }
+  if (value == "Combine this weak signal with entropy, section flags, dynamic API resolution, or runtime observations before drawing conclusions.") {
+    return "这是弱信号，应结合熵、节区权限、动态 API 解析或运行时观测后再判断。";
+  }
+  if (value == "Review this together with packing indicators, writable executable memory, and suspicious runtime behavior.") {
+    return "应结合加壳指标、可写可执行内存和可疑运行时行为一起审查。";
   }
   if (value == "Review call sites and confirm whether command construction includes untrusted input.") {
     return "检查相关调用点，确认命令构造过程是否包含不可信输入。";
@@ -158,6 +189,102 @@ void write_rag_zh(std::ostringstream& out, const AnalysisReport& report) {
   out << '\n';
 }
 
+void write_dynamic_en(std::ostringstream& out, const AnalysisReport& report) {
+  out << "## Dynamic Observations\n\n";
+  if (!report.dynamic_observations.present) {
+    out << "No dynamic observation report was attached. Static analysis did not execute the target.\n\n";
+    return;
+  }
+  const auto& dynamic = report.dynamic_observations;
+  out << "- Platform: " << dynamic.platform << "\n";
+  out << "- Mode: " << dynamic.mode << "\n";
+  out << "- Network mode: " << dynamic.network_mode << "\n";
+  out << "- Timeout: " << dynamic.timeout_seconds << " seconds\n";
+  out << "- Timed out: " << (dynamic.timed_out ? "yes" : "no") << "\n";
+  out << "- Exit code: " << dynamic.exit_code << "\n\n";
+
+  out << "### Process Events\n\n";
+  if (dynamic.process_events.empty()) {
+    out << "- None recorded\n";
+  } else {
+    for (const auto& event : dynamic.process_events) {
+      out << "- " << event.event_type << ": `" << event.image << "` " << event.command_line << "\n";
+    }
+  }
+
+  out << "\n### Network Events\n\n";
+  if (dynamic.network_events.empty()) {
+    out << "- None recorded\n";
+  } else {
+    for (const auto& event : dynamic.network_events) {
+      out << "- " << event.operation << ": " << event.detail << "\n";
+    }
+  }
+
+  out << "\n### File Artifacts\n\n";
+  if (dynamic.file_events.empty()) {
+    out << "- None recorded\n";
+  } else {
+    for (const auto& event : dynamic.file_events) {
+      out << "- `" << event.path << "` (" << event.size << " bytes, " << event.hash << ")\n";
+    }
+  }
+
+  out << "\n### Syscall Summary\n\n";
+  markdown_list(out, dynamic.syscall_summary, "None recorded");
+  out << "\n### Dynamic Warnings\n\n";
+  markdown_list(out, dynamic.warnings, "None");
+  out << '\n';
+}
+
+void write_dynamic_zh(std::ostringstream& out, const AnalysisReport& report) {
+  out << "## 动态观测\n\n";
+  if (!report.dynamic_observations.present) {
+    out << "未附加动态观测报告。静态分析没有执行目标文件。\n\n";
+    return;
+  }
+  const auto& dynamic = report.dynamic_observations;
+  out << "- 平台：" << dynamic.platform << "\n";
+  out << "- 模式：" << dynamic.mode << "\n";
+  out << "- 网络模式：" << dynamic.network_mode << "\n";
+  out << "- 超时：" << dynamic.timeout_seconds << " 秒\n";
+  out << "- 是否超时：" << (dynamic.timed_out ? "是" : "否") << "\n";
+  out << "- 退出码：" << dynamic.exit_code << "\n\n";
+
+  out << "### 进程事件\n\n";
+  if (dynamic.process_events.empty()) {
+    out << "- 未记录\n";
+  } else {
+    for (const auto& event : dynamic.process_events) {
+      out << "- " << event.event_type << "：`" << event.image << "` " << event.command_line << "\n";
+    }
+  }
+
+  out << "\n### 网络事件\n\n";
+  if (dynamic.network_events.empty()) {
+    out << "- 未记录\n";
+  } else {
+    for (const auto& event : dynamic.network_events) {
+      out << "- " << event.operation << "：" << event.detail << "\n";
+    }
+  }
+
+  out << "\n### 文件产物\n\n";
+  if (dynamic.file_events.empty()) {
+    out << "- 未记录\n";
+  } else {
+    for (const auto& event : dynamic.file_events) {
+      out << "- `" << event.path << "`（" << event.size << " bytes，" << event.hash << "）\n";
+    }
+  }
+
+  out << "\n### 系统调用摘要\n\n";
+  markdown_list(out, dynamic.syscall_summary, "未记录");
+  out << "\n### 动态观测警告\n\n";
+  markdown_list(out, dynamic.warnings, "无");
+  out << '\n';
+}
+
 }  // namespace
 
 void ReportWriter::write_markdown(const std::filesystem::path& path,
@@ -208,6 +335,7 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
 
     write_imports(out, report, "导入项", "未提取到导入项。");
     write_strings(out, report, "可疑字符串", "内置分类器未匹配到可疑字符串。");
+    write_dynamic_zh(out, report);
     write_rag_zh(out, report);
     out << "## 警告\n\n";
     markdown_list(out, report.warnings, "无");
@@ -240,6 +368,7 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
 
     write_imports(out, report, "Imports", "No imports extracted.");
     write_strings(out, report, "Suspicious Strings", "No suspicious strings matched built-in classifiers.");
+    write_dynamic_en(out, report);
     write_rag_en(out, report);
     out << "## Warnings\n\n";
     markdown_list(out, report.warnings, "None");

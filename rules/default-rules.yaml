@@ -46,3 +46,40 @@ rules:
       section_flags: [WX, WAX]
     description: A section appears both writable and executable, which can support unpacking or runtime code modification.
     recommendation: Verify whether the section is expected and whether platform hardening is enabled.
+
+  - id: high-entropy-section
+    title: High entropy section
+    severity: medium
+    tags: [packing, obfuscation, static-inconclusive]
+    match:
+      section_entropy_min: 7.2
+    description: A section has high byte entropy, which may indicate packing, compression, encryption, or embedded data.
+    recommendation: Treat static conclusions as incomplete and consider controlled dynamic observation for Linux samples or a dedicated sandbox for high-risk samples.
+
+  - id: packer-section-name
+    title: Packer-like section name
+    severity: medium
+    tags: [packing, obfuscation, static-inconclusive]
+    match:
+      section_names: [UPX, packed, aspack, mpress, petite, themida, vmp]
+      strings_regex: ["(?i)(UPX|ASPack|MPRESS|Themida|VMProtect|packed|packer)"]
+    description: The binary contains section names or strings commonly associated with packers or protectors.
+    recommendation: Verify whether the packing is expected. Strong packers can hide imports and strings from static analysis.
+
+  - id: sparse-imports-packed
+    title: Sparse imports in executable
+    severity: low
+    tags: [packing, obfuscation, static-inconclusive]
+    match:
+      import_count_max: 3
+    description: The binary has very few static imports, which can occur in packed binaries or loaders that resolve APIs dynamically.
+    recommendation: Combine this weak signal with entropy, section flags, dynamic API resolution, or runtime observations before drawing conclusions.
+
+  - id: dynamic-import-resolution
+    title: Dynamic import resolution capability
+    severity: medium
+    tags: [packing, loader, obfuscation]
+    match:
+      functions: [GetProcAddress, LoadLibraryA, LoadLibraryW, dlopen, dlsym]
+    description: The binary can resolve APIs or libraries dynamically at runtime.
+    recommendation: Review this together with packing indicators, writable executable memory, and suspicious runtime behavior.

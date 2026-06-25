@@ -1,4 +1,5 @@
 #include <binsight/types.hpp>
+#include <binsight/dynamic_observer.hpp>
 #include <binsight/utils.hpp>
 
 #include <algorithm>
@@ -46,6 +47,16 @@ std::string to_string(ReportLanguage language) {
   return "both";
 }
 
+std::string to_string(AnalysisMode mode) {
+  switch (mode) {
+    case AnalysisMode::Static:
+      return "static";
+    case AnalysisMode::StaticWithDynamicReport:
+      return "static_with_dynamic_report";
+  }
+  return "static";
+}
+
 Severity severity_from_string(const std::string& value) {
   std::string lower = value;
   std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) {
@@ -85,6 +96,10 @@ void json_string_array(std::ostringstream& out, const std::vector<std::string>& 
 std::string to_json(const AnalysisReport& report) {
   std::ostringstream out;
   out << "{\n";
+  out << "  \"analysis_mode\": ";
+  json_string(out, to_string(report.analysis_mode));
+  out << ",\n";
+
   out << "  \"target\": {";
   out << "\"path\":"; json_string(out, report.target.path); out << ',';
   out << "\"format\":"; json_string(out, report.target.format_name); out << ',';
@@ -109,6 +124,7 @@ std::string to_json(const AnalysisReport& report) {
     out << "{\"name\":"; json_string(out, item.name);
     out << ",\"flags\":"; json_string(out, item.flags);
     out << ",\"size\":" << item.size;
+    out << ",\"entropy\":" << item.entropy;
     out << ",\"risk_note\":"; json_string(out, item.risk_note); out << '}';
   }
   out << "],\n";
@@ -165,6 +181,10 @@ std::string to_json(const AnalysisReport& report) {
   out << "\"recommendations\":"; json_string_array(out, report.ai_analysis.recommendations); out << ',';
   out << "\"raw_response\":"; json_string(out, report.ai_analysis.raw_response);
   out << "},\n";
+
+  out << "  \"dynamic_observations\": ";
+  out << to_json(report.dynamic_observations);
+  out << ",\n";
 
   out << "  \"warnings\": ";
   json_string_array(out, report.warnings);

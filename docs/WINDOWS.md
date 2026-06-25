@@ -54,6 +54,12 @@ If `objdump` or `llvm-objdump` is installed, BinSight also attempts bounded disa
 
 Per the [Industrial Component First Rule](DESIGN_PRINCIPLES.md), LIEF is the production PE/ELF parser. The built-in parser remains available only as a **Temporary / Prototype / Educational Implementation** fallback when LIEF is disabled or unavailable.
 
+## Packed Samples
+
+The Windows build does not automatically execute unknown `.exe` files. For packed or strongly obfuscated PE samples, BinSight reports static indicators such as high-entropy sections, sparse imports, writable executable sections, and dynamic import resolution. If these indicators are present, the report may include `static_inconclusive`.
+
+Use a dedicated VM, professional sandbox, or imported Sysmon/Windows Event Log evidence for high-risk packed samples. `observe linux-docker` is for Linux ELF samples only and does not run Windows PE files.
+
 ## DeepSeek
 
 ```powershell

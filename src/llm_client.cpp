@@ -200,6 +200,7 @@ std::string LlmClient::build_prompt(const ScanOptions& options, const AnalysisRe
     prompt << "Analyze the binary risk from this structured evidence. Return concise English Markdown with:\n"
            << "- Overall severity\n"
            << "- Confirmed evidence\n"
+           << "- Static evidence versus dynamic observations\n"
            << "- Speculative risks\n"
            << "- Risk sources\n"
            << "- Recommendations\n\n";
@@ -207,6 +208,7 @@ std::string LlmClient::build_prompt(const ScanOptions& options, const AnalysisRe
     prompt << "请基于以下结构化证据分析二进制文件风险。请使用简洁、专业的中文 Markdown，并包含：\n"
            << "- 总体风险等级\n"
            << "- 已确认的证据\n"
+           << "- 静态证据与动态观测的区别\n"
            << "- 推测性风险\n"
            << "- 风险来源\n"
            << "- 处置建议\n\n";
@@ -219,10 +221,11 @@ std::string LlmClient::system_prompt(const ScanOptions& options) const {
   std::ostringstream prompt;
   if (options.report_language == ReportLanguage::English) {
     prompt << "You are a binary risk analyst. Use only the provided evidence and retrieved knowledge. "
-           << "Separate confirmed evidence from speculation. Answer in English.";
+           << "Separate confirmed evidence from speculation, and distinguish static evidence from dynamic observations. "
+           << "Answer in English.";
   } else {
     prompt << "你是二进制安全风险分析员。只能基于提供的证据和检索到的知识进行判断，"
-           << "必须区分已确认事实和推测风险。请使用中文回答。";
+           << "必须区分已确认事实和推测风险，并区分静态证据与动态观测。请使用中文回答。";
   }
   return prompt.str();
 }

@@ -6,6 +6,7 @@ BinSight uses a workflow-driven AI design:
 binary input
   -> deterministic scanner
   -> rule engine
+  -> optional dynamic observation import
   -> local RAG retrieval
   -> optional LLM analysis
   -> Markdown + JSON report
@@ -26,7 +27,8 @@ Current status:
 ## Components
 
 - `ProcessRunner`: invokes optional external tools and captures output.
-- `BinaryAnalyzer`: uses LIEF first for ELF/PE metadata, imports, and sections, then falls back only when LIEF is disabled or parsing fails.
+- `BinaryAnalyzer`: uses LIEF first for ELF/PE metadata, imports, sections, and static packing indicators, then falls back only when LIEF is disabled or parsing fails.
+- `LinuxDockerObserver`: optional lightweight Linux dynamic observation. It runs only through the explicit `observe linux-docker` command and is not a malware-grade sandbox.
 - `StringScanner`: classifies suspicious strings.
 - `RiskRuleEngine`: matches deterministic YAML rules and emits evidence.
 - `LocalRagIndex`: retrieves local knowledge documents by keyword scoring.
@@ -36,3 +38,10 @@ Current status:
 ## Agent Boundary
 
 Full agent behavior is intentionally deferred. A future MCP or chat layer may answer follow-up questions from the JSON report, but the scan pipeline remains deterministic and testable.
+
+## Analysis Modes
+
+- `static`: default mode. It never executes the target and may report `static_inconclusive` when packing or obfuscation hides evidence.
+- `static_with_dynamic_report`: static scan plus an imported dynamic observation report. Dynamic evidence is kept separate from static evidence.
+
+Windows samples are not executed by BinSight. High-risk packed Windows files should be analyzed in a dedicated VM or professional sandbox.

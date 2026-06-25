@@ -13,6 +13,7 @@ BinSight 是一个用于扫描可执行文件并生成风险分析报告的 C++2
 - 内置 ASCII 和 UTF-16LE 字符串提取，不再依赖外部 `strings` 命令。
 - 如果系统存在 `objdump` 或 `llvm-objdump`，会额外提取有限反汇编片段；缺失时只写 warning。
 - 使用 YAML 风格风险规则、本地 Markdown RAG 知识库，输出 Markdown 和 JSON 报告。
+- 默认安全的静态模式，以及需要显式确认风险的 Linux Docker 动态观测模式。
 - 支持三种分析模式：
   - `none`：离线规则分析，不调用模型。
   - `openai`：调用 OpenAI 兼容 `/chat/completions` 接口，包括 DeepSeek。
@@ -37,7 +38,7 @@ Linux：
 ./bin/binsight scan ./sample
 ```
 
-发行包会包含 `rules/`、`knowledge/` 和 `docs/`。如果没有传 `--rules-dir` 或 `--knowledge-dir`，BinSight 会自动从发行包目录查找默认规则和知识库。
+发行包会包含 `rules/`、`knowledge/`、`docs/` 和 `docker/`。如果没有传 `--rules-dir` 或 `--knowledge-dir`，BinSight 会自动从发行包目录查找默认规则和知识库。
 
 ## 从源码构建
 
@@ -74,6 +75,20 @@ BinSight 遵守[工业组件优先法则](docs/zh-CN/DESIGN_PRINCIPLES.md)：成
 ```bash
 ./build/binsight scan ./sample
 ```
+
+静态分析是默认模式，不会执行目标文件。
+
+Linux 轻量动态观测：
+
+```bash
+docker build -t binsight-observer:latest docker/linux-observer
+./build/binsight observe linux-docker ./sample \
+  --out dynamic.json \
+  --i-understand-risk
+./build/binsight scan ./sample --dynamic-report dynamic.json
+```
+
+Docker 动态观测不是恶意软件级别沙箱。它会使用受限容器参数并默认禁网，但容器仍共享宿主机内核。只建议在实验机或你愿意承担运行风险的样本上使用。高风险强壳样本应使用专用虚拟机或专业沙箱。
 
 默认会生成：
 
