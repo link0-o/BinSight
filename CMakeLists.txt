@@ -99,13 +99,6 @@ include(GNUInstallDirs)
 install(TARGETS binsight RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(TARGET binsight-gui)
   install(TARGETS binsight-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-  if(COMMAND qt_generate_deploy_app_script)
-    qt_generate_deploy_app_script(
-      TARGET binsight-gui
-      OUTPUT_SCRIPT BINSIGHT_GUI_DEPLOY_SCRIPT
-      NO_UNSUPPORTED_PLATFORM_ERROR)
-    install(SCRIPT ${BINSIGHT_GUI_DEPLOY_SCRIPT})
-  endif()
 endif()
 install(DIRECTORY rules knowledge docs docker DESTINATION .)
 install(FILES README.md README.zh-CN.md LICENSE DESTINATION .)
