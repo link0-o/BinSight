@@ -29,6 +29,7 @@ cmake --build build --target package
 The package contains:
 
 - `bin/binsight` or `bin/binsight.exe`
+- `bin/binsight-gui` or `bin/binsight-gui.exe` when Qt is available at build time
 - `rules/`
 - `knowledge/`
 - `docs/`
@@ -59,6 +60,7 @@ Windows:
 
 ```powershell
 .\bin\binsight.exe --help
+.\bin\binsight.exe gui
 .\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
 ```
 
@@ -66,8 +68,10 @@ Linux:
 
 ```bash
 ./bin/binsight --help
+./bin/binsight gui
 ./bin/binsight scan ./sample --provider none --out report.md --json report.json
 docker build -t binsight-observer:latest docker/linux-observer
 ```
 
 The scan should work without API keys. Missing optional disassembly tools should appear as warnings, not crashes.
+On Linux servers without a graphical session, `binsight gui` should print a CLI fallback message. If Qt was not available during packaging, `binsight gui` should report that the GUI component is not installed.

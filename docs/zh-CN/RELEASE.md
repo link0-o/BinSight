@@ -29,6 +29,7 @@ cmake --build build --target package
 压缩包内容包括：
 
 - `bin/binsight` 或 `bin/binsight.exe`
+- 打包时 Qt 可用则包含 `bin/binsight-gui` 或 `bin/binsight-gui.exe`
 - `rules/`
 - `knowledge/`
 - `docs/`
@@ -59,6 +60,7 @@ Windows：
 
 ```powershell
 .\bin\binsight.exe --help
+.\bin\binsight.exe gui
 .\bin\binsight.exe scan .\sample.exe --provider none --out report.md --json report.json
 ```
 
@@ -66,8 +68,10 @@ Linux：
 
 ```bash
 ./bin/binsight --help
+./bin/binsight gui
 ./bin/binsight scan ./sample --provider none --out report.md --json report.json
 docker build -t binsight-observer:latest docker/linux-observer
 ```
 
 无 API key 时也应该能生成离线规则报告。缺少可选反汇编工具时，只应在报告中出现 warning，不应崩溃。
+Linux 服务器没有图形会话时，`binsight gui` 应输出 CLI 降级提示。如果打包时没有 Qt，`binsight gui` 应提示 GUI 组件未安装。

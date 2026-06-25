@@ -28,11 +28,34 @@ cmake --build build --config Release
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
+## GUI 构建
+
+GUI 是可选的 Qt 6 Widgets 可执行程序。Qt 是桌面界面的工业组件选择：成熟、跨平台、能直接集成 CMake/C++，避免自研窗口系统。GUI 支持中文和英文界面，并且界面语言与报告语言分开选择。
+
+```bash
+cmake -S . -B build -DBINSIGHT_BUILD_GUI=AUTO
+cmake --build build
+```
+
+`BINSIGHT_BUILD_GUI` 支持：
+
+- `AUTO`：找到 Qt 6 Widgets 就构建 `binsight-gui`；找不到就只构建 CLI。
+- `ON`：强制要求 Qt 6 Widgets，缺失时配置失败。
+- `OFF`：只构建 CLI。
+
+Linux 依赖示例：
+
+```bash
+sudo apt-get install qt6-base-dev
+```
+
+Windows 开发者可以安装 MSVC 2022 对应的 Qt 6。如果 CMake 不能自动找到 Qt，可以设置 `CMAKE_PREFIX_PATH`。
+
+GUI 必须复用 `binsight_core` 和 `scan_pipeline`，不能重复实现 parser、规则、RAG、LLM 或报告生成逻辑。
+
 ## 解析依赖
 
 BinSight 遵守[工业组件优先法则](DESIGN_PRINCIPLES.md)。生产级解析应优先选择成熟的可嵌入组件，而不是自研解析代码或必需 CLI 工具依赖。
-
-后续 coding agent 在修改本项目之前必须遵守仓库根目录的 [AGENTS.md](../../AGENTS.md)。该文件是 AI 自动读取的生产红线入口，不是可选贡献文档。
 
 LIEF 是 PE/ELF 的生产级主解析路径，并且默认开启：
 
@@ -91,6 +114,7 @@ cmake --build build --target package
 ```
 
 发行包会包含可执行文件、`rules/`、`knowledge/`、`docs/`、`docker/`、中英文 README 和 `LICENSE`。
+如果打包时 Qt 可用，发行包还会包含 `binsight-gui` / `binsight-gui.exe`。
 
 ## CI
 
@@ -99,5 +123,6 @@ GitHub Actions 会运行：
 - Ubuntu 构建和测试。
 - Windows 构建和测试。
 - CLI help 冒烟测试。
+- Qt 可用时构建 GUI，并运行 `binsight-gui --help` 冒烟测试。
 
 推送 `v*` tag 会触发 release workflow，并发布 Linux/Windows 压缩包。

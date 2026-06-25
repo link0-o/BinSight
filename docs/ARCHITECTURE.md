@@ -4,6 +4,7 @@ BinSight uses a workflow-driven AI design:
 
 ```text
 binary input
+  -> CLI or Qt GUI entrypoint
   -> deterministic scanner
   -> rule engine
   -> optional dynamic observation import
@@ -26,6 +27,8 @@ Current status:
 
 ## Components
 
+- `binsight`: CLI entrypoint. It owns scripting-compatible commands and the `gui` launcher/fallback.
+- `binsight-gui`: optional Qt 6 Widgets desktop UI for Windows and graphical Linux sessions. It reuses `binsight_core` and does not duplicate scanning logic.
 - `ProcessRunner`: invokes optional external tools and captures output.
 - `BinaryAnalyzer`: uses LIEF first for ELF/PE metadata, imports, sections, and static packing indicators, then falls back only when LIEF is disabled or parsing fails.
 - `LinuxDockerObserver`: optional lightweight Linux dynamic observation. It runs only through the explicit `observe linux-docker` command and is not a malware-grade sandbox.

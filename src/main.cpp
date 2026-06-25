@@ -1,12 +1,9 @@
-#include <binsight/binary_analyzer.hpp>
 #include <binsight/config.hpp>
 #include <binsight/dynamic_observer.hpp>
-#include <binsight/llm_client.hpp>
-#include <binsight/local_rag.hpp>
-#include <binsight/report_writer.hpp>
-#include <binsight/risk_rule_engine.hpp>
+#include <binsight/scan_pipeline.hpp>
 #include <binsight/utils.hpp>
 
+#include <cstdlib>
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -38,6 +35,7 @@ void print_usage() {
       << "  binsight observe linux-docker <binary> --out dynamic.json --i-understand-risk\n"
       << "                 [--image binsight-observer:latest] [--timeout 30]\n"
       << "                 [--network none|bridge]\n"
+      << "  binsight gui\n"
       << "  binsight config wizard\n"
       << "  binsight config show\n"
       << "  binsight config set-key --provider deepseek|openai [--name NAME]\n"
@@ -59,26 +57,6 @@ std::filesystem::path executable_dir(char** argv) {
     return {};
   }
   return path.parent_path();
-}
-
-std::filesystem::path resolve_resource_dir(const std::filesystem::path& requested,
-                                           bool explicit_path,
-                                           const std::filesystem::path& exe_dir,
-                                           const std::string& name) {
-  if (explicit_path || std::filesystem::exists(requested)) {
-    return requested;
-  }
-  if (!exe_dir.empty()) {
-    const auto beside_exe = exe_dir / name;
-    if (std::filesystem::exists(beside_exe)) {
-      return beside_exe;
-    }
-    const auto one_up = exe_dir.parent_path() / name;
-    if (std::filesystem::exists(one_up)) {
-      return one_up;
-    }
-  }
-  return requested;
 }
 
 std::string prompt_line(const std::string& label, const std::string& default_value = {}) {
@@ -154,50 +132,30 @@ void apply_config_to_options(const binsight::AppConfig& config, binsight::ScanOp
   options.output_dir = config.output_dir;
 }
 
-std::filesystem::path with_output_dir(const std::filesystem::path& output_dir,
-                                      const std::filesystem::path& path) {
-  if (output_dir.empty() || path.is_absolute() || path.has_parent_path()) {
-    return path;
-  }
-  return output_dir / path;
-}
-
-std::filesystem::path language_path(const std::filesystem::path& path, const std::string& suffix) {
-  const auto parent = path.parent_path();
-  const std::string stem = path.stem().string();
-  const std::string ext = path.extension().empty() ? ".md" : path.extension().string();
-  return parent / (stem + "." + suffix + ext);
-}
-
-std::vector<std::pair<std::filesystem::path, binsight::ReportLanguage>> markdown_outputs(
-    const binsight::ScanOptions& options) {
-  const auto base = with_output_dir(options.output_dir, options.markdown_out);
-  if (options.report_language == binsight::ReportLanguage::English) {
-    return {{base, binsight::ReportLanguage::English}};
-  }
-  if (options.report_language == binsight::ReportLanguage::Chinese) {
-    return {{base, binsight::ReportLanguage::Chinese}};
-  }
-  return {{language_path(base, "zh-CN"), binsight::ReportLanguage::Chinese},
-          {language_path(base, "en"), binsight::ReportLanguage::English}};
-}
-
-bool has_static_inconclusive_finding(const binsight::AnalysisReport& report) {
-  for (const auto& finding : report.rule_findings) {
-    for (const auto& tag : finding.tags) {
-      const auto lower = binsight::lowercase(tag);
-      if (lower == "static-inconclusive" || lower == "packing" || lower == "obfuscation") {
-        return true;
-      }
-    }
-  }
-  return false;
-}
-
 std::string dynamic_risk_notice() {
   return "Dynamic observation may execute the target. Docker reduces accidental host interaction "
          "but is not a malware-grade sandbox because containers share the host kernel. Use only on "
          "a lab machine or samples you are prepared to execute.";
+}
+
+bool has_graphical_session() {
+#ifdef _WIN32
+  return true;
+#else
+  const char* display = std::getenv("DISPLAY");
+  const char* wayland = std::getenv("WAYLAND_DISPLAY");
+  return (display != nullptr && std::string(display).size() > 0) ||
+         (wayland != nullptr && std::string(wayland).size() > 0);
+#endif
+}
+
+std::filesystem::path gui_executable_path(char** argv) {
+#ifdef _WIN32
+  const std::string name = "binsight-gui.exe";
+#else
+  const std::string name = "binsight-gui";
+#endif
+  return executable_dir(argv) / name;
 }
 
 int handle_config(int argc, char** argv) {
@@ -364,16 +322,11 @@ int handle_scan(int argc, char** argv) {
   }
 
   if (!out_explicit && !options.output_dir.empty()) {
-    options.markdown_out = with_output_dir(options.output_dir, options.markdown_out);
+    options.markdown_out = binsight::with_output_dir(options.output_dir, options.markdown_out);
   }
   if (!json_explicit) {
-    options.json_out = with_output_dir(options.output_dir, options.json_out);
+    options.json_out = binsight::with_output_dir(options.output_dir, options.json_out);
   }
-
-  const auto exe_dir = executable_dir(argv);
-  options.knowledge_dir = resolve_resource_dir(options.knowledge_dir, options.knowledge_dir_explicit,
-                                               exe_dir, "knowledge");
-  options.rules_dir = resolve_resource_dir(options.rules_dir, options.rules_dir_explicit, exe_dir, "rules");
 
   if (options.provider != "none" && options.provider != "openai" && options.provider != "ollama") {
     std::cerr << "binsight: provider must be one of none, openai, or ollama\n";
@@ -381,50 +334,15 @@ int handle_scan(int argc, char** argv) {
   }
 
   try {
-    binsight::ProcessRunner runner;
-    binsight::BinaryAnalyzer analyzer{runner, binsight::StringScanner{}};
-    binsight::AnalysisReport report = analyzer.analyze(options);
-    report.warnings.insert(report.warnings.end(), config_warnings.begin(), config_warnings.end());
-
-    if (!options.dynamic_report_path.empty()) {
-      std::string error;
-      const auto dynamic = binsight::read_dynamic_observations(options.dynamic_report_path, error);
-      if (dynamic) {
-        report.analysis_mode = binsight::AnalysisMode::StaticWithDynamicReport;
-        report.dynamic_observations = *dynamic;
-        report.dynamic_observations.present = true;
-      } else {
-        report.warnings.push_back("failed to read dynamic report: " + error);
-      }
-    }
-
-    binsight::RiskRuleEngine rules;
-    report.rule_findings = rules.evaluate(options.rules_dir, report, report.warnings);
-    if (has_static_inconclusive_finding(report)) {
-      report.warnings.push_back(
-          "static_inconclusive: packing or obfuscation indicators were observed; static evidence may be incomplete");
-      if (report.target.format == binsight::BinaryFormat::PE) {
-        report.warnings.push_back(
-            "windows_dynamic_not_automatic: BinSight does not automatically execute Windows samples; use a dedicated VM, professional sandbox, or imported Sysmon events for high-risk packed samples");
-      }
-    }
-
-    binsight::LocalRagIndex rag;
-    report.rag_context = rag.retrieve(options.knowledge_dir, report, report.warnings);
-
-    binsight::LlmClient llm{runner};
-    report.ai_analysis = llm.analyze(options, report, report.warnings);
-
-    binsight::ReportWriter writer;
-    for (const auto& [path, language] : markdown_outputs(options)) {
-      writer.write_markdown(path, report, language);
+    const auto result = binsight::analyze_and_write_reports(options, executable_dir(argv), config_warnings);
+    for (const auto& [path, language] : result.markdown_outputs) {
+      (void)language;
       std::cout << "Markdown report: " << path << '\n';
     }
-    writer.write_json(options.json_out, report);
 
-    std::cout << "JSON report: " << options.json_out << '\n';
-    if (!report.warnings.empty()) {
-      std::cout << "Warnings: " << report.warnings.size() << '\n';
+    std::cout << "JSON report: " << result.json_output << '\n';
+    if (!result.report.warnings.empty()) {
+      std::cout << "Warnings: " << result.report.warnings.size() << '\n';
     }
     return 0;
   } catch (const std::exception& ex) {
@@ -496,6 +414,25 @@ int handle_observe(int argc, char** argv) {
   return warnings.empty() ? 0 : 1;
 }
 
+int handle_gui(char** argv) {
+  if (!has_graphical_session()) {
+    std::cerr << "binsight: no graphical session detected. Continue with the CLI:\n"
+              << "  binsight scan <binary>\n";
+    return 2;
+  }
+
+  const auto gui_path = gui_executable_path(argv);
+  if (!std::filesystem::exists(gui_path)) {
+    std::cerr << "binsight: GUI component is not installed or was not built.\n"
+              << "Build with Qt 6 Widgets available, or continue with:\n"
+              << "  binsight scan <binary>\n";
+    return 2;
+  }
+
+  const int result = std::system(binsight::shell_quote(gui_path.string()).c_str());
+  return result == 0 ? 0 : 1;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -512,6 +449,9 @@ int main(int argc, char** argv) {
   }
   if (command == "observe") {
     return handle_observe(argc, argv);
+  }
+  if (command == "gui") {
+    return handle_gui(argv);
   }
   std::cerr << "binsight: unknown command: " << command << '\n';
   print_usage();

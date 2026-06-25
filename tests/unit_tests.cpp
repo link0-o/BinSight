@@ -4,6 +4,7 @@
 #include <binsight/process_runner.hpp>
 #include <binsight/report_writer.hpp>
 #include <binsight/risk_rule_engine.hpp>
+#include <binsight/scan_pipeline.hpp>
 #include <binsight/string_scanner.hpp>
 
 #include <algorithm>
@@ -243,6 +244,20 @@ int main(int argc, char** argv) {
             return finding.id == "packer-section-name";
           }),
           "packer section name should trigger packed rule");
+  }
+
+  {
+    std::cerr << "[unit] scan pipeline output paths\n";
+    binsight::ScanOptions options;
+    options.output_dir = "out";
+    options.markdown_out = "report.md";
+    options.report_language = binsight::ReportLanguage::Both;
+    const auto paths = binsight::markdown_output_paths(options);
+    check(paths.size() == 2, "both language mode should emit two Markdown paths");
+    check(paths.size() == 2 && paths[0].first == std::filesystem::path("out/report.zh-CN.md"),
+          "Chinese report path should use zh-CN suffix");
+    check(paths.size() == 2 && paths[1].first == std::filesystem::path("out/report.en.md"),
+          "English report path should use en suffix");
   }
 
   {

@@ -28,11 +28,34 @@ cmake --build build --config Release
 ctest --test-dir build --build-config Release --output-on-failure
 ```
 
+## GUI Build
+
+The GUI is an optional Qt 6 Widgets executable. Qt is the selected industrial component for the desktop UI because it is mature, cross-platform, embeddable in a CMake/C++ build, and avoids a custom windowing stack. The GUI supports English and Chinese interface text and keeps report language selection separate from UI language.
+
+```bash
+cmake -S . -B build -DBINSIGHT_BUILD_GUI=AUTO
+cmake --build build
+```
+
+`BINSIGHT_BUILD_GUI` accepts:
+
+- `AUTO`: build `binsight-gui` when Qt 6 Widgets is found; otherwise build CLI only.
+- `ON`: require Qt 6 Widgets and fail configuration if it is missing.
+- `OFF`: build CLI only.
+
+Linux package prerequisite example:
+
+```bash
+sudo apt-get install qt6-base-dev
+```
+
+Windows developers can install Qt 6 for MSVC 2022 and make it discoverable with `CMAKE_PREFIX_PATH` if CMake cannot find it automatically.
+
+The GUI must reuse `binsight_core` and `scan_pipeline`; it must not duplicate parser, rule, RAG, LLM, or report generation logic.
+
 ## Parser Dependencies
 
 BinSight follows the [Industrial Component First Rule](DESIGN_PRINCIPLES.md). Production-grade parsing should prefer a mature embeddable component over custom parsing code or required CLI tool dependencies.
-
-Coding agents must follow the repository-level [AGENTS.md](../AGENTS.md) before modifying this project. That file is the AI auto-read production red-line entrypoint, not optional contributor documentation.
 
 LIEF is the production PE/ELF parsing path and is enabled by default:
 
@@ -91,6 +114,7 @@ cmake --build build --target package
 ```
 
 Release packages include the executable, `rules/`, `knowledge/`, `docs/`, `docker/`, both READMEs, and `LICENSE`.
+If Qt is available at package build time, packages also include `binsight-gui` / `binsight-gui.exe`.
 
 ## CI
 
@@ -99,5 +123,6 @@ GitHub Actions runs:
 - Ubuntu build and tests.
 - Windows build and tests.
 - CLI help smoke test.
+- GUI build and `binsight-gui --help` smoke test when Qt is available.
 
 Pushing a `v*` tag runs the release workflow and publishes Linux/Windows packages.

@@ -10,6 +10,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(BINSIGHT_USE_LIEF "Enable the LIEF-backed production PE/ELF parser" ON)
+set(BINSIGHT_BUILD_GUI "AUTO" CACHE STRING "Build the Qt Widgets GUI: AUTO, ON, or OFF")
+set_property(CACHE BINSIGHT_BUILD_GUI PROPERTY STRINGS AUTO ON OFF)
 
 add_library(binsight_core
   src/binary_analyzer.cpp
@@ -20,6 +22,7 @@ add_library(binsight_core
   src/process_runner.cpp
   src/report_writer.cpp
   src/risk_rule_engine.cpp
+  src/scan_pipeline.cpp
   src/string_scanner.cpp
   src/types.cpp
   src/utils.cpp)
@@ -70,6 +73,20 @@ endif()
 add_executable(binsight src/main.cpp)
 target_link_libraries(binsight PRIVATE binsight_core)
 
+string(TOUPPER "${BINSIGHT_BUILD_GUI}" BINSIGHT_BUILD_GUI_UPPER)
+if(NOT BINSIGHT_BUILD_GUI_UPPER STREQUAL "OFF")
+  find_package(Qt6 COMPONENTS Widgets QUIET)
+  if(Qt6_FOUND)
+    add_executable(binsight-gui src/gui/main.cpp)
+    target_link_libraries(binsight-gui PRIVATE binsight_core Qt6::Widgets)
+    target_compile_definitions(binsight-gui PRIVATE QT_NO_KEYWORDS)
+  elseif(BINSIGHT_BUILD_GUI_UPPER STREQUAL "ON")
+    message(FATAL_ERROR "BINSIGHT_BUILD_GUI=ON requires Qt6 Widgets. Install Qt 6 or use -DBINSIGHT_BUILD_GUI=OFF.")
+  else()
+    message(STATUS "Qt6 Widgets not found; skipping binsight-gui")
+  endif()
+endif()
+
 include(CTest)
 if(BUILD_TESTING)
   add_executable(binsight_tests tests/unit_tests.cpp)
@@ -80,6 +97,16 @@ endif()
 
 include(GNUInstallDirs)
 install(TARGETS binsight RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+if(TARGET binsight-gui)
+  install(TARGETS binsight-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  if(COMMAND qt_generate_deploy_app_script)
+    qt_generate_deploy_app_script(
+      TARGET binsight-gui
+      OUTPUT_SCRIPT BINSIGHT_GUI_DEPLOY_SCRIPT
+      NO_UNSUPPORTED_PLATFORM_ERROR)
+    install(SCRIPT ${BINSIGHT_GUI_DEPLOY_SCRIPT})
+  endif()
+endif()
 install(DIRECTORY rules knowledge docs docker DESTINATION .)
 install(FILES README.md README.zh-CN.md LICENSE DESTINATION .)
 

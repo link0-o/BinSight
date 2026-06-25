@@ -27,14 +27,40 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Install Qt on Ubuntu
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+
+      - name: Install Qt on Windows
+        if: runner.os == 'Windows'
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: "6.8.2"
+          host: windows
+          target: desktop
+          arch: win64_msvc2022_64
+
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_USE_LIEF=ON
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_USE_LIEF=ON -DBINSIGHT_BUILD_GUI=AUTO
 
       - name: Build
         run: cmake --build build --config Release
 
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure --verbose
+
+      - name: GUI help smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            if [ -f ./build/Release/binsight-gui.exe ]; then
+              ./build/Release/binsight-gui.exe --help
+            fi
+          else
+            if [ -f ./build/binsight-gui ]; then
+              ./build/binsight-gui --help
+            fi
+          fi
 
       - name: Package
         run: cpack --config build/CPackConfig.cmake -C Release

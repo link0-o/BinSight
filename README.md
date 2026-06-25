@@ -7,6 +7,7 @@ BinSight scans executable files and produces evidence-grounded risk reports. It 
 ## Features
 
 - Native Linux and Windows CLI builds.
+- Optional Qt 6 Widgets GUI for Windows and desktop Linux.
 - ELF and PE format detection.
 - LIEF-backed production PE/ELF parsing for imports, sections, architecture, and bitness.
 - Built-in fallback parser for dependency-restricted or offline development builds.
@@ -30,15 +31,17 @@ Windows:
 
 ```powershell
 .\bin\binsight.exe scan .\sample.exe
+.\bin\binsight.exe gui
 ```
 
 Linux:
 
 ```bash
 ./bin/binsight scan ./sample
+./bin/binsight gui
 ```
 
-The release package includes `rules/`, `knowledge/`, `docs/`, and `docker/`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
+The release package includes `rules/`, `knowledge/`, `docs/`, and `docker/`. If the build includes Qt, it also includes `bin/binsight-gui` or `bin/binsight-gui.exe`. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
 
 ## Build From Source
 
@@ -65,6 +68,16 @@ cmake -S . -B build -DBINSIGHT_USE_LIEF=ON
 ```
 
 `BINSIGHT_USE_LIEF` is ON by default. Use `-DBINSIGHT_USE_LIEF=OFF` only for dependency-restricted or offline development builds.
+
+GUI build:
+
+```bash
+cmake -S . -B build -DBINSIGHT_BUILD_GUI=AUTO
+cmake -S . -B build -DBINSIGHT_BUILD_GUI=ON   # require Qt 6 Widgets
+cmake -S . -B build -DBINSIGHT_BUILD_GUI=OFF  # CLI only
+```
+
+`AUTO` is the default. When Qt 6 Widgets is available, CMake builds `binsight-gui`; otherwise the CLI remains fully functional.
 
 BinSight follows the [Industrial Component First Rule](docs/DESIGN_PRINCIPLES.md): mature embeddable components are preferred over custom parsers or required CLI tool dependencies. LIEF is the production PE/ELF parser. The built-in parser is a **Temporary / Prototype / Educational Implementation** fallback.
 
@@ -109,6 +122,15 @@ Interactive configuration:
 ./build/binsight config wizard
 ./build/binsight config show
 ```
+
+Graphical configuration and scanning:
+
+```bash
+./build/binsight gui
+./build/binsight-gui
+```
+
+The GUI supports English/Chinese interface text, file drag and drop, output directory selection, report language selection, provider/model presets, secure API key saving when the platform supports it, and report preview/open buttons. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, `binsight gui` falls back with a CLI usage hint instead of trying to open a window.
 
 DeepSeek through the OpenAI-compatible provider:
 

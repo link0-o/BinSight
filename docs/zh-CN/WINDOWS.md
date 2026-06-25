@@ -24,6 +24,14 @@ BinSight/
 .\bin\binsight.exe scan .\sample.exe
 ```
 
+如果发行包包含 GUI，可以打开图形界面：
+
+```powershell
+.\bin\binsight.exe gui
+```
+
+GUI 支持拖拽文件、AI Provider/模型 preset、通过 Windows Credential Manager 安全保存 API key，以及打开中文报告、英文报告、JSON 和输出目录。
+
 默认生成：
 
 ```text
@@ -92,6 +100,13 @@ ctest --test-dir build --build-config Release --output-on-failure
 
 ```powershell
 .\build\Release\binsight.exe scan .\sample.exe
+.\build\Release\binsight.exe gui
+```
+
+如果源码构建时强制要求 GUI，先安装 MSVC 2022 对应的 Qt 6 Widgets，然后配置：
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_BUILD_GUI=ON
 ```
 
 ## 可选工具

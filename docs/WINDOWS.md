@@ -24,6 +24,14 @@ Run an offline scan:
 .\bin\binsight.exe scan .\sample.exe
 ```
 
+Open the GUI when the release package includes it:
+
+```powershell
+.\bin\binsight.exe gui
+```
+
+The GUI supports drag and drop, AI provider/model presets, secure API key saving through Windows Credential Manager, and buttons to open the generated Chinese report, English report, JSON report, and output directory.
+
 Default outputs:
 
 ```text
@@ -90,6 +98,13 @@ Run:
 
 ```powershell
 .\build\Release\binsight.exe scan .\sample.exe
+.\build\Release\binsight.exe gui
+```
+
+To require the GUI during a source build, install Qt 6 Widgets for MSVC 2022 and configure with:
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_BUILD_GUI=ON
 ```
 
 ## Optional Tools
