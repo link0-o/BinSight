@@ -83,7 +83,7 @@ This built-in parser is classified as **Temporary / Prototype / Educational Impl
 Runtime scanning treats these tools as optional when available:
 
 - `objdump` or `llvm-objdump`: bounded disassembly snippets.
-- `curl`: only for `openai` or `ollama` providers.
+- `curl`: only for online LLM providers such as `openai`, `anthropic`, `deepseek`, `kimi`, `glm`, `qwen`, or `ollama`.
 - `docker`: only for explicit `observe linux-docker`.
 
 Missing optional tools should produce warnings rather than process crashes.

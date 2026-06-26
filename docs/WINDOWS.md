@@ -75,9 +75,8 @@ Use a dedicated VM, professional sandbox, or imported Sysmon/Windows Event Log e
 .\bin\binsight.exe config wizard
 
 .\bin\binsight.exe scan .\sample.exe `
-  --provider openai `
-  --base-url https://api.deepseek.com `
-  --model deepseek-chat
+  --provider deepseek `
+  --model deepseek-v4-flash
 ```
 
 `config set-key` stores the API key in Windows Credential Manager. The config file stores only a credential reference name, not the plaintext key.
@@ -112,7 +111,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_BUILD_GUI=ON
 These tools are optional for the native Windows build:
 
 - `llvm-objdump`: optional disassembly snippets.
-- `curl`: needed only for `openai` or `ollama` providers. Windows 10/11 usually includes it.
+- `curl`: needed only for online LLM providers such as `openai`, `deepseek`, `kimi`, `glm`, `anthropic`, or `ollama`. Windows 10/11 usually includes it.
 
 Without optional disassembly tools, reports still include imports, sections, strings, rules, and RAG context.
 

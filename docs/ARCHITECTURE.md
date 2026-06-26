@@ -35,7 +35,7 @@ Current status:
 - `StringScanner`: classifies suspicious strings.
 - `RiskRuleEngine`: matches deterministic YAML rules and emits evidence.
 - `LocalRagIndex`: retrieves local knowledge documents by keyword scoring.
-- `LlmClient`: adapts OpenAI-compatible APIs, Ollama, or offline mode.
+- `LlmClient`: adapts the OpenAI Responses API, OpenAI-compatible chat APIs, Anthropic-compatible APIs, Ollama, or offline mode. Provider presets map common vendors to these transport modes.
 - `ReportWriter`: writes Markdown and JSON reports.
 
 ## Agent Boundary

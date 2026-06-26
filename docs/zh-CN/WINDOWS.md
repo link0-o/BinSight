@@ -77,9 +77,8 @@ PowerShell：
 .\bin\binsight.exe config wizard
 
 .\bin\binsight.exe scan .\sample.exe `
-  --provider openai `
-  --base-url https://api.deepseek.com `
-  --model deepseek-chat
+  --provider deepseek `
+  --model deepseek-v4-flash
 ```
 
 `config set-key` 会把 API key 保存到 Windows Credential Manager。配置文件只保存凭据引用名，不保存明文 key。
@@ -114,7 +113,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_BUILD_GUI=ON
 这些工具不是原生 Windows 版完成基础 PE 扫描的硬依赖：
 
 - `llvm-objdump`：用于可选反汇编片段。
-- `curl`：Windows 10/11 通常自带；仅 `openai` 或 `ollama` 模式需要。
+- `curl`：Windows 10/11 通常自带；仅 `openai`、`deepseek`、`kimi`、`glm`、`anthropic`、`ollama` 等在线 LLM Provider 需要。
 
 如果不安装可选反汇编工具，报告仍然会包含 imports、sections、strings、rules 和 RAG。
 

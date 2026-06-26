@@ -1,5 +1,6 @@
 #include <binsight/config.hpp>
 #include <binsight/dynamic_observer.hpp>
+#include <binsight/llm_client.hpp>
 #include <binsight/scan_pipeline.hpp>
 #include <binsight/types.hpp>
 #include <binsight/utils.hpp>
@@ -66,11 +67,17 @@ QString app_dir() {
 }
 
 std::string provider_value(const QString& preset) {
-  if (preset == "DeepSeek") {
+  if (preset == "OpenAI (Responses)") {
+    return "responses";
+  }
+  if (preset == "DeepSeek (OpenAI)" || preset == "OpenAI-compatible" ||
+      preset == "Kimi / Moonshot" || preset == "GLM / Zhipu" ||
+      preset == "Qwen / DashScope" || preset == "SiliconFlow" ||
+      preset == "OpenRouter") {
     return "openai";
   }
-  if (preset == "OpenAI-compatible") {
-    return "openai";
+  if (preset == "DeepSeek (Anthropic)" || preset == "Anthropic") {
+    return "anthropic";
   }
   if (preset == "Ollama") {
     return "ollama";
@@ -79,10 +86,16 @@ std::string provider_value(const QString& preset) {
 }
 
 std::string default_key_name(const QString& preset) {
-  if (preset == "DeepSeek") {
+  if (preset == "DeepSeek (OpenAI)" || preset == "DeepSeek (Anthropic)") {
     return "binsight:deepseek";
   }
-  if (preset == "OpenAI-compatible") {
+  if (preset == "Kimi / Moonshot") return "binsight:kimi";
+  if (preset == "GLM / Zhipu") return "binsight:glm";
+  if (preset == "Qwen / DashScope") return "binsight:qwen";
+  if (preset == "SiliconFlow") return "binsight:siliconflow";
+  if (preset == "OpenRouter") return "binsight:openrouter";
+  if (preset == "Anthropic") return "binsight:anthropic";
+  if (preset == "OpenAI (Responses)" || preset == "OpenAI-compatible") {
     return "binsight:openai";
   }
   if (preset == "Ollama") {
@@ -92,10 +105,16 @@ std::string default_key_name(const QString& preset) {
 }
 
 std::string default_key_env(const QString& preset) {
-  if (preset == "DeepSeek") {
+  if (preset == "DeepSeek (OpenAI)" || preset == "DeepSeek (Anthropic)") {
     return "DEEPSEEK_API_KEY";
   }
-  if (preset == "OpenAI-compatible") {
+  if (preset == "Kimi / Moonshot") return "MOONSHOT_API_KEY";
+  if (preset == "GLM / Zhipu") return "ZHIPU_API_KEY";
+  if (preset == "Qwen / DashScope") return "DASHSCOPE_API_KEY";
+  if (preset == "SiliconFlow") return "SILICONFLOW_API_KEY";
+  if (preset == "OpenRouter") return "OPENROUTER_API_KEY";
+  if (preset == "Anthropic") return "ANTHROPIC_API_KEY";
+  if (preset == "OpenAI (Responses)" || preset == "OpenAI-compatible") {
     return "OPENAI_API_KEY";
   }
   return "OPENAI_API_KEY";
@@ -263,24 +282,32 @@ class MainWindow final : public QMainWindow {
     config_group_ = new QGroupBox(config_page);
     auto* config_form = new QFormLayout(config_group_);
     provider_ = new QComboBox(config_group_);
-    provider_->addItems({"none", "DeepSeek", "OpenAI-compatible", "Ollama"});
+    provider_->addItems({"none", "DeepSeek (OpenAI)", "DeepSeek (Anthropic)",
+                         "Kimi / Moonshot", "GLM / Zhipu", "Qwen / DashScope",
+                         "SiliconFlow", "OpenRouter", "OpenAI (Responses)",
+                         "OpenAI-compatible",
+                         "Anthropic", "Ollama"});
     base_url_ = new QLineEdit(config_group_);
     model_ = new QComboBox(config_group_);
-    model_->setEditable(true);
+    model_->setEditable(false);
+    custom_model_ = new QLineEdit(config_group_);
     api_key_ = new QLineEdit(config_group_);
     api_key_->setEchoMode(QLineEdit::Password);
     provider_label_ = add_form_row(config_form, provider_);
     base_url_label_ = add_form_row(config_form, base_url_);
     model_label_ = add_form_row(config_form, model_);
+    custom_model_label_ = add_form_row(config_form, custom_model_);
     api_key_label_ = add_form_row(config_form, api_key_);
     config_layout->addWidget(config_group_);
 
     auto* config_actions = new QHBoxLayout();
     save_config_ = new QPushButton(config_page);
     save_key_ = new QPushButton(config_page);
+    test_connection_ = new QPushButton(config_page);
     show_config_ = new QPushButton(config_page);
     config_actions->addWidget(save_config_);
     config_actions->addWidget(save_key_);
+    config_actions->addWidget(test_connection_);
     config_actions->addWidget(show_config_);
     config_actions->addStretch(1);
     config_layout->addLayout(config_actions);
@@ -292,6 +319,7 @@ class MainWindow final : public QMainWindow {
     connect(ui_language_, &QComboBox::currentIndexChanged, this, [this]() { apply_ui_language(); });
     connect(save_config_, &QPushButton::clicked, this, [this]() { save_non_sensitive_config(); });
     connect(save_key_, &QPushButton::clicked, this, [this]() { save_api_key(); });
+    connect(test_connection_, &QPushButton::clicked, this, [this]() { test_llm_connection(); });
     connect(show_config_, &QPushButton::clicked, this, [this]() {
       binsight::ConfigManager manager;
       QMessageBox::information(this, tr_text("config_title"), qstring_from_path(manager.config_path()));
@@ -339,10 +367,13 @@ class MainWindow final : public QMainWindow {
     if (name == "provider") return zh ? "Provider" : "Provider";
     if (name == "base_url") return zh ? "Base URL" : "Base URL";
     if (name == "model") return zh ? "模型" : "Model";
+    if (name == "custom_model") return zh ? "自定义模型名" : "Custom model";
+    if (name == "custom_model_placeholder") return zh ? "可选：输入后优先使用这个模型名" : "Optional: overrides the preset model";
     if (name == "api_key") return zh ? "API key" : "API key";
     if (name == "api_key_placeholder") return zh ? "仅在安全凭据库可用时保存" : "Only saved to secure credential storage when available";
     if (name == "save_config") return zh ? "保存配置" : "Save Config";
     if (name == "save_key") return zh ? "安全保存 API Key" : "Save API Key Securely";
+    if (name == "test_connection") return zh ? "测试模型联通" : "Test Model";
     if (name == "show_config") return zh ? "显示配置路径" : "Show Config Path";
     if (name == "scan_tab") return zh ? "扫描" : "Scan";
     if (name == "config_tab") return zh ? "AI 配置" : "AI Config";
@@ -353,6 +384,8 @@ class MainWindow final : public QMainWindow {
     if (name == "api_key_missing") return zh ? "请先选择 Provider 并输入 API key。" : "Choose a provider and enter an API key first.";
     if (name == "secure_unavailable") return zh ? "当前构建无法使用安全凭据库。请改用环境变量。" : "Secure credential storage is unavailable in this build. Use an environment variable instead.";
     if (name == "api_key_saved") return zh ? "API key 已保存到系统安全凭据库。" : "API key was saved to secure credential storage.";
+    if (name == "test_title") return zh ? "模型联通测试" : "Model connection test";
+    if (name == "testing_model") return zh ? "正在测试模型联通..." : "Testing model connection...";
     if (name == "scan_title") return zh ? "扫描" : "Scan";
     if (name == "choose_binary_first") return zh ? "请先选择一个二进制文件。" : "Choose a binary first.";
     if (name == "dynamic_title") return zh ? "动态观测" : "Dynamic observation";
@@ -394,10 +427,13 @@ class MainWindow final : public QMainWindow {
     provider_label_->setText(tr_text("provider"));
     base_url_label_->setText(tr_text("base_url"));
     model_label_->setText(tr_text("model"));
+    custom_model_label_->setText(tr_text("custom_model"));
+    custom_model_->setPlaceholderText(tr_text("custom_model_placeholder"));
     api_key_label_->setText(tr_text("api_key"));
     api_key_->setPlaceholderText(tr_text("api_key_placeholder"));
     save_config_->setText(tr_text("save_config"));
     save_key_->setText(tr_text("save_key"));
+    test_connection_->setText(tr_text("test_connection"));
     show_config_->setText(tr_text("show_config"));
     tabs_->setTabText(tabs_->indexOf(scan_page_), tr_text("scan_tab"));
     tabs_->setTabText(tabs_->indexOf(config_page_), tr_text("config_tab"));
@@ -418,14 +454,46 @@ class MainWindow final : public QMainWindow {
 
   void apply_provider_preset(const QString& preset) {
     model_->clear();
-    if (preset == "DeepSeek") {
+    if (preset == "DeepSeek (OpenAI)") {
       base_url_->setText("https://api.deepseek.com");
-      model_->addItems({"deepseek-chat", "deepseek-reasoner"});
-      model_->setCurrentText("deepseek-chat");
+      model_->addItems({"deepseek-v4-flash", "deepseek-v4-pro"});
+      model_->setCurrentText("deepseek-v4-flash");
+    } else if (preset == "DeepSeek (Anthropic)") {
+      base_url_->setText("https://api.deepseek.com/anthropic");
+      model_->addItems({"deepseek-v4-flash", "deepseek-v4-pro"});
+      model_->setCurrentText("deepseek-v4-pro");
+    } else if (preset == "Kimi / Moonshot") {
+      base_url_->setText("https://api.moonshot.cn/v1");
+      model_->addItems({"kimi-latest", "kimi-k2-0711-preview", "moonshot-v1-8k", "moonshot-v1-32k"});
+      model_->setCurrentText("kimi-latest");
+    } else if (preset == "GLM / Zhipu") {
+      base_url_->setText("https://open.bigmodel.cn/api/paas/v4");
+      model_->addItems({"glm-5.2", "glm-4.5", "glm-4.5-air", "glm-4-plus"});
+      model_->setCurrentText("glm-5.2");
+    } else if (preset == "Qwen / DashScope") {
+      base_url_->setText("https://dashscope.aliyuncs.com/compatible-mode/v1");
+      model_->addItems({"qwen-plus", "qwen-max", "qwen-turbo", "qwen-long"});
+      model_->setCurrentText("qwen-plus");
+    } else if (preset == "SiliconFlow") {
+      base_url_->setText("https://api.siliconflow.cn/v1");
+      model_->addItems({"deepseek-ai/DeepSeek-V3", "Qwen/Qwen2.5-72B-Instruct", "THUDM/glm-4-9b-chat"});
+      model_->setCurrentText("deepseek-ai/DeepSeek-V3");
+    } else if (preset == "OpenRouter") {
+      base_url_->setText("https://openrouter.ai/api/v1");
+      model_->addItems({"openai/gpt-4o-mini", "anthropic/claude-3.5-sonnet", "google/gemini-flash-1.5"});
+      model_->setCurrentText("openai/gpt-4o-mini");
+    } else if (preset == "OpenAI (Responses)") {
+      base_url_->setText("https://api.openai.com/v1");
+      model_->addItems({"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"});
+      model_->setCurrentText("gpt-5.5");
     } else if (preset == "OpenAI-compatible") {
       base_url_->setText("https://api.openai.com/v1");
-      model_->addItems({"gpt-4.1-mini", "gpt-4.1"});
-      model_->setCurrentText("gpt-4.1-mini");
+      model_->addItems({"gpt-5.5", "gpt-5.4", "gpt-5.4-mini", "gpt-5.4-nano"});
+      model_->setCurrentText("gpt-5.5");
+    } else if (preset == "Anthropic") {
+      base_url_->setText("https://api.anthropic.com");
+      model_->addItems({"claude-3-5-sonnet-latest", "claude-3-5-haiku-latest"});
+      model_->setCurrentText("claude-3-5-sonnet-latest");
     } else if (preset == "Ollama") {
       base_url_->setText("http://localhost:11434");
       model_->addItems({"llama3.1", "qwen2.5", "mistral"});
@@ -449,9 +517,12 @@ class MainWindow final : public QMainWindow {
     options.report_language = selected_language();
     options.provider = provider_value(provider_->currentText());
     options.base_url = base_url_->text().toStdString();
-    options.model = model_->currentText().toStdString();
+    options.model = custom_model_->text().trimmed().isEmpty()
+                        ? model_->currentText().toStdString()
+                        : custom_model_->text().trimmed().toStdString();
     options.api_key_env = default_key_env(provider_->currentText());
     options.api_key_name = default_key_name(provider_->currentText());
+    options.api_key_override = api_key_->text().toStdString();
     return options;
   }
 
@@ -467,23 +538,53 @@ class MainWindow final : public QMainWindow {
     report_language_->setCurrentText(QString::fromStdString(binsight::to_string(config->report_language)));
     if (config->provider == "ollama") {
       provider_->setCurrentText("Ollama");
+    } else if (config->api_key_name == "binsight:deepseek" && config->provider == "anthropic") {
+      provider_->setCurrentText("DeepSeek (Anthropic)");
     } else if (config->api_key_name == "binsight:deepseek" ||
                config->base_url.find("deepseek") != std::string::npos) {
-      provider_->setCurrentText("DeepSeek");
+      provider_->setCurrentText("DeepSeek (OpenAI)");
+    } else if (config->api_key_name == "binsight:kimi" ||
+               config->base_url.find("moonshot") != std::string::npos) {
+      provider_->setCurrentText("Kimi / Moonshot");
+    } else if (config->api_key_name == "binsight:glm" ||
+               config->base_url.find("bigmodel") != std::string::npos) {
+      provider_->setCurrentText("GLM / Zhipu");
+    } else if (config->api_key_name == "binsight:qwen" ||
+               config->base_url.find("dashscope") != std::string::npos) {
+      provider_->setCurrentText("Qwen / DashScope");
+    } else if (config->api_key_name == "binsight:siliconflow" ||
+               config->base_url.find("siliconflow") != std::string::npos) {
+      provider_->setCurrentText("SiliconFlow");
+    } else if (config->api_key_name == "binsight:openrouter" ||
+               config->base_url.find("openrouter") != std::string::npos) {
+      provider_->setCurrentText("OpenRouter");
+    } else if (config->provider == "anthropic") {
+      provider_->setCurrentText("Anthropic");
+    } else if (config->provider == "responses") {
+      provider_->setCurrentText("OpenAI (Responses)");
     } else if (config->provider == "openai") {
       provider_->setCurrentText("OpenAI-compatible");
     } else {
       provider_->setCurrentText("none");
     }
     base_url_->setText(QString::fromStdString(config->base_url));
-    model_->setCurrentText(QString::fromStdString(config->model));
+    const QString configured_model = QString::fromStdString(config->model);
+    const int preset_index = model_->findText(configured_model);
+    if (preset_index >= 0) {
+      model_->setCurrentIndex(preset_index);
+      custom_model_->clear();
+    } else {
+      custom_model_->setText(configured_model);
+    }
   }
 
   binsight::AppConfig app_config_from_ui() const {
     binsight::AppConfig config;
     config.provider = provider_value(provider_->currentText());
     config.base_url = base_url_->text().toStdString();
-    config.model = model_->currentText().toStdString();
+    config.model = custom_model_->text().trimmed().isEmpty()
+                       ? model_->currentText().toStdString()
+                       : custom_model_->text().trimmed().toStdString();
     config.api_key_env = default_key_env(provider_->currentText());
     config.api_key_name = default_key_name(provider_->currentText());
     config.report_language = selected_language();
@@ -521,6 +622,40 @@ class MainWindow final : public QMainWindow {
     api_key_->clear();
     save_non_sensitive_config();
     QMessageBox::information(this, tr_text("api_key_title"), tr_text("api_key_saved"));
+  }
+
+  void test_llm_connection() {
+    auto options = scan_options();
+    result_text_->setPlainText(tr_text("testing_model"));
+    test_connection_->setEnabled(false);
+    QPointer<MainWindow> self(this);
+    const bool use_chinese = ui_language() == UiLanguage::Chinese;
+    std::thread([self, options, use_chinese]() {
+      std::vector<std::string> warnings;
+      binsight::LlmClient client{binsight::ProcessRunner{}};
+      const auto result = client.test_connection(options, warnings);
+      std::ostringstream out;
+      out << (use_chinese ? "Provider: " : "Provider: ") << options.provider << "\n";
+      out << (use_chinese ? "Base URL: " : "Base URL: ") << options.base_url << "\n";
+      out << (use_chinese ? "模型: " : "Model: ") << options.model << "\n";
+      out << (use_chinese ? "结果: " : "Result: ") << (result.ok ? "ok" : "failed") << "\n";
+      out << result.message << "\n";
+      for (const auto& warning : warnings) {
+        if (warning != result.message) {
+          out << (use_chinese ? "警告: " : "Warning: ") << warning << "\n";
+        }
+      }
+      const QString message = QString::fromStdString(out.str());
+      QMetaObject::invokeMethod(qApp, [self, message, ok = result.ok]() {
+        if (!self) {
+          return;
+        }
+        self->test_connection_->setEnabled(true);
+        self->result_text_->setPlainText(message);
+        QMessageBox::information(self, self->tr_text("test_title"), message);
+        (void)ok;
+      }, Qt::QueuedConnection);
+    }).detach();
   }
 
   void run_scan(bool with_dynamic) {
@@ -617,6 +752,7 @@ class MainWindow final : public QMainWindow {
 
   void set_running(bool running) {
     scan_button_->setEnabled(!running);
+    test_connection_->setEnabled(!running);
 #ifndef _WIN32
     dynamic_button_->setEnabled(!running);
 #endif
@@ -665,10 +801,13 @@ class MainWindow final : public QMainWindow {
   QLabel* base_url_label_ = nullptr;
   QComboBox* model_ = nullptr;
   QLabel* model_label_ = nullptr;
+  QLineEdit* custom_model_ = nullptr;
+  QLabel* custom_model_label_ = nullptr;
   QLineEdit* api_key_ = nullptr;
   QLabel* api_key_label_ = nullptr;
   QPushButton* save_config_ = nullptr;
   QPushButton* save_key_ = nullptr;
+  QPushButton* test_connection_ = nullptr;
   QPushButton* show_config_ = nullptr;
   std::filesystem::path last_zh_report_;
   std::filesystem::path last_en_report_;

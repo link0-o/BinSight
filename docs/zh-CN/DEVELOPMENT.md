@@ -83,7 +83,7 @@ fallback parser 在 LIEF 不可用时覆盖最低限度证据：
 运行时会把以下工具当作可选增强：
 
 - `objdump` 或 `llvm-objdump`：提取有限反汇编片段。
-- `curl`：仅 `openai` 或 `ollama` 模式需要。
+- `curl`：仅 `openai`、`anthropic`、`deepseek`、`kimi`、`glm`、`qwen`、`ollama` 等在线 LLM Provider 需要。
 - `docker`：仅显式执行 `observe linux-docker` 时需要。
 
 工具缺失或解析失败应记录到 `warnings`，不应直接导致程序崩溃。

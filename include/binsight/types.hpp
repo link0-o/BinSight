@@ -36,6 +36,7 @@ struct ScanOptions {
   std::string base_url;
   std::string api_key_env = "OPENAI_API_KEY";
   std::string api_key_name;
+  std::string api_key_override;
   std::filesystem::path dynamic_report_path;
   int max_disasm_snippets = 6;
 };

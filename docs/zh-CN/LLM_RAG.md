@@ -5,8 +5,22 @@
 ## 分析模式
 
 - `none`：不调用模型，只输出确定性规则分析。
-- `openai`：通过 `curl` 调用 OpenAI 兼容 `/chat/completions` 接口。
+- `openai`：通过 `curl` 调用 OpenAI 官方 `/responses` 接口。
+- `openai-compatible`：通过 `curl` 调用通用 `/chat/completions` 兼容接口。
+- Provider preset：`deepseek`、`kimi`、`glm`、`qwen`/`dashscope`、`siliconflow`、`openrouter` 会自动填充 base URL、模型、key 环境变量和安全凭据名默认值。
+- `anthropic`：调用 Anthropic 兼容 `/v1/messages` 接口。
+- `deepseek-anthropic`：调用 DeepSeek 的 Anthropic 兼容接口。
 - `ollama`：通过 `curl` 调用本地 Ollama `/api/generate` 接口。
+
+GUI 的模型字段支持手动输入。preset 只是便捷选项，不是封闭列表。
+
+可以在扫描前测试模型联通，且不会发送二进制报告：
+
+```bash
+binsight config test-llm --provider deepseek --model deepseek-v4-flash
+```
+
+测试请求只发送一条很短的 `Reply with OK.` 提示。
 
 ## 配置与 API Key
 

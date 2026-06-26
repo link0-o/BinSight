@@ -5,8 +5,22 @@ RAG is local and auditable in the first version. Markdown files in `knowledge/` 
 ## Provider Modes
 
 - `none`: no network call; writes deterministic local analysis.
-- `openai`: calls an OpenAI-compatible `/chat/completions` endpoint through `curl`.
+- `openai`: calls the official OpenAI `/responses` endpoint through `curl`.
+- `openai-compatible`: calls a generic `/chat/completions` endpoint through `curl`.
+- Provider presets: `deepseek`, `kimi`, `glm`, `qwen`/`dashscope`, `siliconflow`, and `openrouter` fill base URL, model, key env, and secure key name defaults.
+- `anthropic`: calls an Anthropic-compatible `/v1/messages` endpoint.
+- `deepseek-anthropic`: uses DeepSeek's Anthropic-compatible endpoint.
 - `ollama`: calls Ollama `/api/generate` through `curl`.
+
+The GUI model field is editable. Presets are conveniences, not a closed list.
+
+Connectivity can be tested without sending a binary report:
+
+```bash
+binsight config test-llm --provider deepseek --model deepseek-v4-flash
+```
+
+The test request sends only a short `Reply with OK.` prompt.
 
 ## Configuration and API Keys
 

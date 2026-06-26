@@ -17,7 +17,10 @@ BinSight scans executable files and produces evidence-grounded risk reports. It 
 - Safe-by-default static mode plus explicit Linux Docker dynamic observation.
 - LLM providers:
   - `none` for offline rule-only reports.
-  - `openai` for OpenAI-compatible chat completions, including DeepSeek.
+  - `openai` for the official OpenAI Responses API.
+  - `openai-compatible` for generic `/chat/completions` compatible endpoints.
+  - Provider presets for DeepSeek, Kimi/Moonshot, GLM/Zhipu, Qwen/DashScope, SiliconFlow, and OpenRouter.
+  - `anthropic` and `deepseek-anthropic` for Anthropic-compatible messages APIs.
   - `ollama` for local Ollama generation.
 
 ## Download
@@ -131,16 +134,32 @@ Graphical configuration and scanning:
 ```
 
 The GUI supports English/Chinese interface text, file drag and drop, output directory selection, report language selection, provider/model presets, secure API key saving when the platform supports it, and report preview/open buttons. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, `binsight gui` falls back with a CLI usage hint instead of trying to open a window.
+The model selector is editable, so users can type a vendor-specific model ID that is not yet in the preset list. The AI Config tab also includes a lightweight model connection test that sends only a short connectivity prompt, not a binary report.
 
-DeepSeek through the OpenAI-compatible provider:
+DeepSeek OpenAI-compatible API:
 
 ```bash
 export DEEPSEEK_API_KEY=...
 ./build/binsight scan ./sample \
-  --provider openai \
-  --base-url https://api.deepseek.com \
-  --model deepseek-chat \
-  --api-key-env DEEPSEEK_API_KEY
+  --provider deepseek \
+  --model deepseek-v4-flash
+```
+
+DeepSeek Anthropic-compatible API:
+
+```bash
+export DEEPSEEK_API_KEY=...
+./build/binsight scan ./sample \
+  --provider deepseek-anthropic \
+  --model deepseek-v4-pro
+```
+
+Other OpenAI-compatible presets:
+
+```bash
+./build/binsight scan ./sample --provider kimi --model kimi-latest
+./build/binsight scan ./sample --provider glm --model glm-5.2
+./build/binsight scan ./sample --provider qwen --model qwen-plus
 ```
 
 On Windows, store API keys in Windows Credential Manager:
@@ -159,10 +178,19 @@ export OPENAI_API_KEY=...
 ./build/binsight scan ./sample \
   --provider openai \
   --base-url https://api.openai.com/v1 \
-  --model gpt-4.1-mini \
+  --model gpt-5.5 \
   --api-key-env OPENAI_API_KEY \
   --out report.md \
   --json report.json
+```
+
+For third-party OpenAI-compatible endpoints, use `--provider openai-compatible` or a vendor preset such as `deepseek`, `kimi`, `glm`, or `qwen`.
+
+Test a provider/model before scanning:
+
+```bash
+./build/binsight config test-llm --provider deepseek --model deepseek-v4-flash
+./build/binsight config test-llm --provider kimi --model kimi-latest
 ```
 
 Ollama:

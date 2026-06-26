@@ -1,5 +1,6 @@
 #include <binsight/config.hpp>
 #include <binsight/dynamic_observer.hpp>
+#include <binsight/llm_client.hpp>
 #include <binsight/scan_pipeline.hpp>
 #include <binsight/utils.hpp>
 
@@ -23,12 +24,85 @@
 
 namespace {
 
+struct ProviderPreset {
+  bool found = false;
+  std::string transport;
+  std::string base_url;
+  std::string model;
+  std::string api_key_env;
+  std::string api_key_name;
+};
+
+ProviderPreset provider_preset(const std::string& provider_name) {
+  const std::string lower = binsight::lowercase(provider_name);
+  if (lower == "deepseek") {
+    return {true, "openai", "https://api.deepseek.com", "deepseek-v4-flash",
+            "DEEPSEEK_API_KEY", "binsight:deepseek"};
+  }
+  if (lower == "deepseek-anthropic") {
+    return {true, "anthropic", "https://api.deepseek.com/anthropic", "deepseek-v4-pro",
+            "DEEPSEEK_API_KEY", "binsight:deepseek"};
+  }
+  if (lower == "openai") {
+    return {true, "responses", "https://api.openai.com/v1", "gpt-5.5",
+            "OPENAI_API_KEY", "binsight:openai"};
+  }
+  if (lower == "openai-responses") {
+    return {true, "responses", "https://api.openai.com/v1", "gpt-5.5",
+            "OPENAI_API_KEY", "binsight:openai"};
+  }
+  if (lower == "responses") {
+    return {true, "responses", "https://api.openai.com/v1", "gpt-5.5",
+            "OPENAI_API_KEY", "binsight:openai"};
+  }
+  if (lower == "openai-compatible") {
+    return {true, "openai", "https://api.openai.com/v1", "gpt-5.5",
+            "OPENAI_API_KEY", "binsight:openai"};
+  }
+  if (lower == "anthropic") {
+    return {true, "anthropic", "https://api.anthropic.com", "claude-3-5-sonnet-latest",
+            "ANTHROPIC_API_KEY", "binsight:anthropic"};
+  }
+  if (lower == "kimi" || lower == "moonshot") {
+    return {true, "openai", "https://api.moonshot.cn/v1", "kimi-latest",
+            "MOONSHOT_API_KEY", "binsight:kimi"};
+  }
+  if (lower == "glm" || lower == "zhipu") {
+    return {true, "openai", "https://open.bigmodel.cn/api/paas/v4", "glm-5.2",
+            "ZHIPU_API_KEY", "binsight:glm"};
+  }
+  if (lower == "qwen" || lower == "dashscope") {
+    return {true, "openai", "https://dashscope.aliyuncs.com/compatible-mode/v1", "qwen-plus",
+            "DASHSCOPE_API_KEY", "binsight:qwen"};
+  }
+  if (lower == "siliconflow") {
+    return {true, "openai", "https://api.siliconflow.cn/v1", "deepseek-ai/DeepSeek-V3",
+            "SILICONFLOW_API_KEY", "binsight:siliconflow"};
+  }
+  if (lower == "openrouter") {
+    return {true, "openai", "https://openrouter.ai/api/v1", "openai/gpt-4o-mini",
+            "OPENROUTER_API_KEY", "binsight:openrouter"};
+  }
+  if (lower == "ollama") {
+    return {true, "ollama", "http://localhost:11434", "llama3.1", "", ""};
+  }
+  if (lower == "none") {
+    return {true, "none", "", "", "", ""};
+  }
+  return {};
+}
+
+std::string supported_providers_text() {
+  return "none, openai, anthropic, deepseek, deepseek-anthropic, kimi, glm, qwen, "
+         "dashscope, siliconflow, openrouter, openai-compatible, or ollama";
+}
+
 void print_usage() {
   std::cout
       << "Usage:\n"
       << "  binsight scan <binary> [--out report.md] [--json report.json]\n"
       << "                 [--report-lang zh-CN|en|both]\n"
-      << "                 [--provider none|openai|ollama] [--model name]\n"
+      << "                 [--provider " << supported_providers_text() << "] [--model name]\n"
       << "                 [--base-url url] [--api-key-env ENV] [--api-key-name NAME]\n"
       << "                 [--knowledge-dir knowledge] [--rules-dir rules]\n"
       << "                 [--max-disasm-snippets N] [--dynamic-report dynamic.json]\n"
@@ -38,8 +112,10 @@ void print_usage() {
       << "  binsight gui\n"
       << "  binsight config wizard\n"
       << "  binsight config show\n"
-      << "  binsight config set-key --provider deepseek|openai [--name NAME]\n"
-      << "  binsight config delete-key --provider deepseek|openai [--name NAME]\n";
+      << "  binsight config test-llm [--provider NAME] [--model NAME]\n"
+      << "                 [--base-url URL] [--api-key-env ENV] [--api-key-name NAME]\n"
+      << "  binsight config set-key --provider deepseek|kimi|glm|qwen|openai|anthropic|siliconflow|openrouter [--name NAME]\n"
+      << "  binsight config delete-key --provider deepseek|kimi|glm|qwen|openai|anthropic|siliconflow|openrouter [--name NAME]\n";
 }
 
 bool next_value(int& index, int argc, char** argv, std::string& value) {
@@ -95,30 +171,43 @@ std::string read_secret(const std::string& label) {
 }
 
 void apply_provider_preset(const std::string& provider_name, binsight::AppConfig& config) {
-  const std::string lower = binsight::lowercase(provider_name);
-  if (lower == "deepseek") {
-    config.provider = "openai";
-    config.base_url = "https://api.deepseek.com";
-    config.model = "deepseek-chat";
-    config.api_key_env = "DEEPSEEK_API_KEY";
-    config.api_key_name = "binsight:deepseek";
-  } else if (lower == "openai") {
-    config.provider = "openai";
-    config.base_url = "https://api.openai.com/v1";
-    config.model = "gpt-4.1-mini";
-    config.api_key_env = "OPENAI_API_KEY";
-    config.api_key_name = "binsight:openai";
-  } else if (lower == "ollama") {
-    config.provider = "ollama";
-    config.base_url = "http://localhost:11434";
-    config.model = "llama3.1";
-    config.api_key_env.clear();
-    config.api_key_name.clear();
-  } else {
+  const auto preset = provider_preset(provider_name);
+  if (!preset.found) {
     config.provider = "none";
     config.base_url.clear();
     config.model.clear();
+    config.api_key_env = "OPENAI_API_KEY";
     config.api_key_name.clear();
+    return;
+  }
+  config.provider = preset.transport;
+  config.base_url = preset.base_url;
+  config.model = preset.model;
+  config.api_key_env = preset.api_key_env.empty() ? config.api_key_env : preset.api_key_env;
+  config.api_key_name = preset.api_key_name;
+}
+
+void apply_provider_defaults(binsight::ScanOptions& options,
+                             bool base_explicit,
+                             bool model_explicit,
+                             bool api_env_explicit,
+                             bool key_name_explicit) {
+  const auto preset = provider_preset(options.provider);
+  if (!preset.found) {
+    return;
+  }
+  options.provider = preset.transport;
+  if (!base_explicit && !preset.base_url.empty()) {
+    options.base_url = preset.base_url;
+  }
+  if (!model_explicit && !preset.model.empty()) {
+    options.model = preset.model;
+  }
+  if (!api_env_explicit && !preset.api_key_env.empty()) {
+    options.api_key_env = preset.api_key_env;
+  }
+  if (!key_name_explicit) {
+    options.api_key_name = preset.api_key_name;
   }
 }
 
@@ -189,7 +278,7 @@ int handle_config(int argc, char** argv) {
   }
 
   if (subcommand == "wizard") {
-    const std::string provider = prompt_line("Provider (none/openai/deepseek/ollama)", config.provider);
+    const std::string provider = prompt_line("Provider (" + supported_providers_text() + ")", config.provider);
     apply_provider_preset(provider, config);
     config.base_url = prompt_line("Base URL", config.base_url);
     config.model = prompt_line("Model", config.model);
@@ -201,7 +290,8 @@ int handle_config(int argc, char** argv) {
     manager.save(config);
     std::cout << "Saved non-sensitive config: " << manager.config_path() << '\n';
 
-    if (config.provider == "openai" && credentials.is_secure_store_available()) {
+    if ((config.provider == "openai" || config.provider == "anthropic") &&
+        credentials.is_secure_store_available()) {
       const std::string save_key = prompt_line("Save API key to secure credential store? (yes/no)", "no");
       if (binsight::lowercase(save_key) == "yes" || binsight::lowercase(save_key) == "y") {
         const std::string secret = read_secret("API key");
@@ -212,11 +302,64 @@ int handle_config(int argc, char** argv) {
         }
         std::cout << "API key saved to secure credential store as " << config.api_key_name << '\n';
       }
-    } else if (config.provider == "openai") {
+    } else if (config.provider == "openai" || config.provider == "anthropic") {
       std::cout << "Secure credential storage is unavailable in this build. Use env var: "
                 << config.api_key_env << '\n';
     }
     return 0;
+  }
+
+  if (subcommand == "test-llm") {
+    binsight::ScanOptions options;
+    apply_config_to_options(config, options);
+    bool base_explicit = !options.base_url.empty();
+    bool model_explicit = !options.model.empty();
+    bool api_env_explicit = false;
+    bool key_name_explicit = !options.api_key_name.empty();
+    for (int i = 3; i < argc; ++i) {
+      const std::string arg = argv[i];
+      std::string value;
+      if (arg == "--provider" && next_value(i, argc, argv, value)) {
+        options.provider = value;
+        base_explicit = false;
+        model_explicit = false;
+        key_name_explicit = false;
+      } else if (arg == "--model" && next_value(i, argc, argv, value)) {
+        options.model = value;
+        model_explicit = true;
+      } else if (arg == "--base-url" && next_value(i, argc, argv, value)) {
+        options.base_url = value;
+        base_explicit = true;
+      } else if (arg == "--api-key-env" && next_value(i, argc, argv, value)) {
+        options.api_key_env = value;
+        api_env_explicit = true;
+      } else if (arg == "--api-key-name" && next_value(i, argc, argv, value)) {
+        options.api_key_name = value;
+        key_name_explicit = true;
+      } else {
+        std::cerr << "binsight: invalid config test-llm option: " << arg << '\n';
+        return 1;
+      }
+    }
+    if (!provider_preset(options.provider).found) {
+      std::cerr << "binsight: provider must be one of " << supported_providers_text() << '\n';
+      return 1;
+    }
+    apply_provider_defaults(options, base_explicit, model_explicit, api_env_explicit, key_name_explicit);
+    std::vector<std::string> test_warnings;
+    binsight::LlmClient client{binsight::ProcessRunner{}};
+    const auto result = client.test_connection(options, test_warnings);
+    std::cout << "Provider: " << options.provider << '\n';
+    std::cout << "Base URL: " << options.base_url << '\n';
+    std::cout << "Model: " << options.model << '\n';
+    std::cout << "Result: " << (result.ok ? "ok" : "failed") << '\n';
+    std::cout << result.message << '\n';
+    for (const auto& warning : test_warnings) {
+      if (warning != result.message) {
+        std::cout << "Warning: " << warning << '\n';
+      }
+    }
+    return result.ok ? 0 : 1;
   }
 
   if (subcommand == "set-key" || subcommand == "delete-key") {
@@ -283,6 +426,10 @@ int handle_scan(int argc, char** argv) {
   options.binary_path = argv[2];
   bool out_explicit = false;
   bool json_explicit = false;
+  bool base_explicit = false;
+  bool model_explicit = false;
+  bool api_env_explicit = false;
+  bool key_name_explicit = false;
   for (int i = 3; i < argc; ++i) {
     const std::string arg = argv[i];
     std::string value;
@@ -298,12 +445,16 @@ int handle_scan(int argc, char** argv) {
       options.provider = value;
     } else if (arg == "--model" && next_value(i, argc, argv, value)) {
       options.model = value;
+      model_explicit = true;
     } else if (arg == "--base-url" && next_value(i, argc, argv, value)) {
       options.base_url = value;
+      base_explicit = true;
     } else if (arg == "--api-key-env" && next_value(i, argc, argv, value)) {
       options.api_key_env = value;
+      api_env_explicit = true;
     } else if (arg == "--api-key-name" && next_value(i, argc, argv, value)) {
       options.api_key_name = value;
+      key_name_explicit = true;
     } else if (arg == "--knowledge-dir" && next_value(i, argc, argv, value)) {
       options.knowledge_dir = value;
       options.knowledge_dir_explicit = true;
@@ -328,10 +479,11 @@ int handle_scan(int argc, char** argv) {
     options.json_out = binsight::with_output_dir(options.output_dir, options.json_out);
   }
 
-  if (options.provider != "none" && options.provider != "openai" && options.provider != "ollama") {
-    std::cerr << "binsight: provider must be one of none, openai, or ollama\n";
+  if (!provider_preset(options.provider).found) {
+    std::cerr << "binsight: provider must be one of " << supported_providers_text() << '\n';
     return 1;
   }
+  apply_provider_defaults(options, base_explicit, model_explicit, api_env_explicit, key_name_explicit);
 
   try {
     const auto result = binsight::analyze_and_write_reports(options, executable_dir(argv), config_warnings);

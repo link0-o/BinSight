@@ -14,6 +14,12 @@ namespace binsight {
 
 namespace {
 
+struct LlmHttpRequest {
+  std::string body;
+  std::string url;
+  std::vector<std::string> headers = {"Content-Type: application/json"};
+};
+
 Severity max_severity(const std::vector<RuleFinding>& findings) {
   Severity result = Severity::Info;
   for (const auto& finding : findings) {
@@ -69,14 +75,20 @@ std::string json_unescape_string(const std::string& value) {
 
 std::optional<std::string> api_key_from_options(const ScanOptions& options,
                                                 std::vector<std::string>& warnings) {
+  if (!options.api_key_override.empty()) {
+    return options.api_key_override;
+  }
+
   if (!options.api_key_name.empty()) {
     CredentialStore store;
-    std::string error;
-    auto secret = store.load(options.api_key_name, error);
-    if (secret && !secret->empty()) {
-      return secret;
+    if (store.is_secure_store_available()) {
+      std::string error;
+      auto secret = store.load(options.api_key_name, error);
+      if (secret && !secret->empty()) {
+        return secret;
+      }
+      warnings.push_back("configured API key was not available from secure storage: " + error);
     }
-    warnings.push_back("configured API key was not available from secure storage: " + error);
   }
 
   const char* key = std::getenv(options.api_key_env.c_str());
@@ -84,6 +96,83 @@ std::optional<std::string> api_key_from_options(const ScanOptions& options,
     return std::string(key);
   }
   return std::nullopt;
+}
+
+std::string join_url(const std::string& base, const std::string& suffix) {
+  if (base.empty()) {
+    return suffix;
+  }
+  if (base.back() == '/' && !suffix.empty() && suffix.front() == '/') {
+    return base.substr(0, base.size() - 1) + suffix;
+  }
+  if (base.back() != '/' && !suffix.empty() && suffix.front() != '/') {
+    return base + "/" + suffix;
+  }
+  return base + suffix;
+}
+
+std::optional<LlmHttpRequest> build_request(const ScanOptions& options,
+                                            const std::string& system_prompt,
+                                            const std::string& user_prompt,
+                                            std::vector<std::string>& warnings) {
+  LlmHttpRequest request;
+  if (options.provider == "responses") {
+    const auto key = api_key_from_options(options, warnings);
+    if (!key) {
+      warnings.push_back("OpenAI Responses provider requested but no API key is available. Configure secure storage or env var: " +
+                         options.api_key_env);
+      return std::nullopt;
+    }
+    const std::string base = options.base_url.empty() ? "https://api.openai.com/v1" : options.base_url;
+    request.url = join_url(base, "/responses");
+    request.headers.push_back("Authorization: Bearer " + *key);
+    const std::string model = options.model.empty() ? "gpt-5.5" : options.model;
+    request.body = std::string("{\"model\":\"") + json_escape(model) +
+                   "\",\"input\":[{\"role\":\"system\",\"content\":\"" +
+                   json_escape(system_prompt) + "\"},{\"role\":\"user\",\"content\":\"" +
+                   json_escape(user_prompt) + "\"}],\"temperature\":0.1}";
+  } else if (options.provider == "openai") {
+    const auto key = api_key_from_options(options, warnings);
+    if (!key) {
+      warnings.push_back("OpenAI-compatible provider requested but no API key is available. Configure secure storage or env var: " +
+                         options.api_key_env);
+      return std::nullopt;
+    }
+    const std::string base = options.base_url.empty() ? "https://api.openai.com/v1" : options.base_url;
+    request.url = join_url(base, "/chat/completions");
+    request.headers.push_back("Authorization: Bearer " + *key);
+    const std::string model = options.model.empty() ? "gpt-5.5" : options.model;
+    request.body = std::string("{\"model\":\"") + json_escape(model) +
+                   "\",\"temperature\":0.1,\"messages\":[{\"role\":\"system\",\"content\":\"" +
+                   json_escape(system_prompt) + "\"},{\"role\":\"user\",\"content\":\"" +
+                   json_escape(user_prompt) + "\"}]}";
+  } else if (options.provider == "anthropic") {
+    const auto key = api_key_from_options(options, warnings);
+    if (!key) {
+      warnings.push_back("Anthropic-compatible provider requested but no API key is available. Configure secure storage or env var: " +
+                         options.api_key_env);
+      return std::nullopt;
+    }
+    const std::string base = options.base_url.empty() ? "https://api.anthropic.com" : options.base_url;
+    request.url = join_url(base, "/v1/messages");
+    request.headers.push_back("x-api-key: " + *key);
+    request.headers.push_back("anthropic-version: 2023-06-01");
+    const std::string model = options.model.empty() ? "claude-3-5-sonnet-latest" : options.model;
+    request.body = std::string("{\"model\":\"") + json_escape(model) +
+                   "\",\"max_tokens\":1200,\"temperature\":0.1,\"system\":\"" +
+                   json_escape(system_prompt) + "\",\"messages\":[{\"role\":\"user\",\"content\":\"" +
+                   json_escape(user_prompt) + "\"}]}";
+  } else if (options.provider == "ollama") {
+    const std::string base = options.base_url.empty() ? "http://localhost:11434" : options.base_url;
+    request.url = join_url(base, "/api/generate");
+    const std::string model = options.model.empty() ? "llama3.1" : options.model;
+    request.body = std::string("{\"model\":\"") + json_escape(model) + "\",\"prompt\":\"" +
+                   json_escape(system_prompt + "\n\n" + user_prompt) + "\",\"stream\":false}";
+  } else {
+    warnings.push_back("unknown provider: " + options.provider);
+    return std::nullopt;
+  }
+  return request;
 }
 
 }  // namespace
@@ -98,33 +187,8 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
   }
 
   const std::string prompt = build_prompt(options, report);
-  std::string body;
-  std::string url;
-  std::vector<std::string> curl_headers = {"Content-Type: application/json"};
-
-  if (options.provider == "openai") {
-    const auto key = api_key_from_options(options, warnings);
-    if (!key) {
-      warnings.push_back("OpenAI-compatible provider requested but no API key is available. Configure secure storage or env var: " +
-                         options.api_key_env);
-      return offline_analysis(options, report);
-    }
-    const std::string base = options.base_url.empty() ? "https://api.openai.com/v1" : options.base_url;
-    url = base + "/chat/completions";
-    curl_headers.push_back("Authorization: Bearer " + *key);
-    const std::string model = options.model.empty() ? "gpt-4.1-mini" : options.model;
-    body = std::string("{\"model\":\"") + json_escape(model) +
-           "\",\"temperature\":0.1,\"messages\":[{\"role\":\"system\",\"content\":\"" +
-           json_escape(system_prompt(options)) + "\"},{\"role\":\"user\",\"content\":\"" +
-           json_escape(prompt) + "\"}]}";
-  } else if (options.provider == "ollama") {
-    const std::string base = options.base_url.empty() ? "http://localhost:11434" : options.base_url;
-    url = base + "/api/generate";
-    const std::string model = options.model.empty() ? "llama3.1" : options.model;
-    body = std::string("{\"model\":\"") + json_escape(model) + "\",\"prompt\":\"" +
-           json_escape(prompt) + "\",\"stream\":false}";
-  } else {
-    warnings.push_back("unknown provider: " + options.provider);
+  const auto request = build_request(options, system_prompt(options), prompt, warnings);
+  if (!request) {
     return offline_analysis(options, report);
   }
 
@@ -132,11 +196,11 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
                          ("binsight-llm-request-" + std::to_string(std::rand()) + ".json");
   const auto curl_config_path = std::filesystem::temp_directory_path() /
                                 ("binsight-curl-config-" + std::to_string(std::rand()) + ".txt");
-  write_file(temp_path, body);
+  write_file(temp_path, request->body);
   std::ostringstream curl_config;
   curl_config << "request = \"POST\"\n";
-  curl_config << "url = \"" << url << "\"\n";
-  for (const auto& header : curl_headers) {
+  curl_config << "url = \"" << request->url << "\"\n";
+  for (const auto& header : request->headers) {
     curl_config << "header = \"" << header << "\"\n";
   }
   curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
@@ -156,9 +220,21 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
   analysis.model = options.model;
   analysis.raw_response = response.output;
   std::smatch match;
-  if (options.provider == "openai" &&
+  if (options.provider == "responses" &&
+      std::regex_search(response.output, match,
+                        std::regex(R"JSON("output_text"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
+    analysis.summary = json_unescape_string(match[1].str());
+  } else if (options.provider == "responses" &&
+             std::regex_search(response.output, match,
+                               std::regex(R"JSON("text"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
+    analysis.summary = json_unescape_string(match[1].str());
+  } else if (options.provider == "openai" &&
       std::regex_search(response.output, match,
                         std::regex(R"JSON("content"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
+    analysis.summary = json_unescape_string(match[1].str());
+  } else if (options.provider == "anthropic" &&
+             std::regex_search(response.output, match,
+                               std::regex(R"JSON("text"\s*:\s*"((?:\\.|[^"\\])*)")JSON"))) {
     analysis.summary = json_unescape_string(match[1].str());
   } else if (options.provider == "ollama" &&
              std::regex_search(response.output, match,
@@ -169,6 +245,54 @@ AiAnalysis LlmClient::analyze(const ScanOptions& options,
     analysis.summary = first_chars(response.output, 1200);
   }
   return analysis;
+}
+
+LlmConnectionTest LlmClient::test_connection(const ScanOptions& options,
+                                             std::vector<std::string>& warnings) const {
+  LlmConnectionTest result;
+  if (options.provider == "none") {
+    result.ok = true;
+    result.message = "Provider is none; no network test is required.";
+    return result;
+  }
+
+  const auto request = build_request(options,
+                                     "You are a connectivity test endpoint.",
+                                     "Reply with OK.",
+                                     warnings);
+  if (!request) {
+    result.message = warnings.empty() ? "failed to build LLM request" : warnings.back();
+    return result;
+  }
+
+  const auto temp_path = std::filesystem::temp_directory_path() /
+                         ("binsight-llm-test-" + std::to_string(std::rand()) + ".json");
+  const auto curl_config_path = std::filesystem::temp_directory_path() /
+                                ("binsight-curl-test-" + std::to_string(std::rand()) + ".txt");
+  write_file(temp_path, request->body);
+  std::ostringstream curl_config;
+  curl_config << "request = \"POST\"\n";
+  curl_config << "url = \"" << request->url << "\"\n";
+  for (const auto& header : request->headers) {
+    curl_config << "header = \"" << header << "\"\n";
+  }
+  curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
+  write_file(curl_config_path, curl_config.str());
+
+  std::vector<std::string> args = {"curl", "-sS", "--fail-with-body", "--config",
+                                   curl_config_path.string()};
+  ToolResult response = runner_.run(args, 30);
+  std::filesystem::remove(temp_path);
+  std::filesystem::remove(curl_config_path);
+  result.raw_response = response.output;
+  if (response.exit_code == 0) {
+    result.ok = true;
+    result.message = "LLM provider connection succeeded.";
+  } else {
+    result.ok = false;
+    result.message = "LLM provider connection failed: " + first_chars(response.output, 1200);
+  }
+  return result;
 }
 
 AiAnalysis LlmClient::offline_analysis(const ScanOptions& options, const AnalysisReport& report) const {

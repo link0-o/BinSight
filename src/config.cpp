@@ -178,7 +178,16 @@ bool CredentialStore::is_secure_store_available() const {
 std::string default_key_name_for_provider(const std::string& provider) {
   const std::string lower = lowercase(provider);
   if (lower == "deepseek") return "binsight:deepseek";
+  if (lower == "deepseek-anthropic") return "binsight:deepseek";
   if (lower == "openai") return "binsight:openai";
+  if (lower == "responses" || lower == "openai-responses") return "binsight:openai";
+  if (lower == "openai-compatible") return "binsight:openai";
+  if (lower == "anthropic") return "binsight:anthropic";
+  if (lower == "kimi" || lower == "moonshot") return "binsight:kimi";
+  if (lower == "glm" || lower == "zhipu") return "binsight:glm";
+  if (lower == "qwen" || lower == "dashscope") return "binsight:qwen";
+  if (lower == "siliconflow") return "binsight:siliconflow";
+  if (lower == "openrouter") return "binsight:openrouter";
   if (lower == "ollama") return "binsight:ollama";
   return "binsight:" + lower;
 }
