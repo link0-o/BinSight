@@ -1,6 +1,6 @@
 ---
 id: command-execution
-rules: [dangerous-command-exec]
+rules: [command-execution-capability, dangerous-command-exec]
 apis: [system, popen, execl, execle, execlp, execv, execve, posix_spawn, WinExec, ShellExecuteA, ShellExecuteW, CreateProcessA, CreateProcessW]
 strings: [shutdown, /bin/sh, /bin/bash, bash -c, cmd.exe, powershell, wscript, cscript, curl, wget, schtasks]
 tags: [command-execution, process, shell]

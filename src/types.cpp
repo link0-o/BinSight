@@ -91,6 +91,25 @@ void json_string_array(std::ostringstream& out, const std::vector<std::string>& 
   out << ']';
 }
 
+void json_risk_assessment(std::ostringstream& out, const RiskAssessment& assessment) {
+  out << "{";
+  out << "\"severity\":"; json_string(out, to_string(assessment.severity)); out << ',';
+  out << "\"summary\":"; json_string(out, assessment.summary); out << ',';
+  out << "\"risk_sources\":"; json_string_array(out, assessment.risk_sources); out << ',';
+  out << "\"recommendations\":"; json_string_array(out, assessment.recommendations);
+  out << "}";
+}
+
+void json_final_assessment(std::ostringstream& out, const FinalAssessment& assessment) {
+  out << "{";
+  out << "\"severity\":"; json_string(out, to_string(assessment.severity)); out << ',';
+  out << "\"summary\":"; json_string(out, assessment.summary); out << ',';
+  out << "\"decision_basis\":"; json_string(out, assessment.decision_basis); out << ',';
+  out << "\"risk_sources\":"; json_string_array(out, assessment.risk_sources); out << ',';
+  out << "\"recommendations\":"; json_string_array(out, assessment.recommendations);
+  out << "}";
+}
+
 }  // namespace
 
 std::string to_json(const AnalysisReport& report) {
@@ -151,6 +170,9 @@ std::string to_json(const AnalysisReport& report) {
     out << "{\"id\":"; json_string(out, item.id);
     out << ",\"title\":"; json_string(out, item.title);
     out << ",\"severity\":"; json_string(out, to_string(item.severity));
+    out << ",\"risk_type\":"; json_string(out, item.risk_type);
+    out << ",\"confidence\":"; json_string(out, item.confidence);
+    out << ",\"evidence_strength\":"; json_string(out, item.evidence_strength);
     out << ",\"tags\":"; json_string_array(out, item.tags);
     out << ",\"description\":"; json_string(out, item.description);
     out << ",\"recommendation\":"; json_string(out, item.recommendation);
@@ -172,15 +194,25 @@ std::string to_json(const AnalysisReport& report) {
   }
   out << "],\n";
 
+  out << "  \"local_analysis\": ";
+  json_risk_assessment(out, report.local_analysis);
+  out << ",\n";
+
   out << "  \"ai_analysis\": {";
   out << "\"provider\":"; json_string(out, report.ai_analysis.provider); out << ',';
   out << "\"model\":"; json_string(out, report.ai_analysis.model); out << ',';
   out << "\"severity\":"; json_string(out, to_string(report.ai_analysis.severity)); out << ',';
+  out << "\"confidence\":"; json_string(out, report.ai_analysis.confidence); out << ',';
   out << "\"summary\":"; json_string(out, report.ai_analysis.summary); out << ',';
+  out << "\"decision_basis\":"; json_string(out, report.ai_analysis.decision_basis); out << ',';
   out << "\"risk_sources\":"; json_string_array(out, report.ai_analysis.risk_sources); out << ',';
   out << "\"recommendations\":"; json_string_array(out, report.ai_analysis.recommendations); out << ',';
   out << "\"raw_response\":"; json_string(out, report.ai_analysis.raw_response);
   out << "},\n";
+
+  out << "  \"final_assessment\": ";
+  json_final_assessment(out, report.final_assessment);
+  out << ",\n";
 
   out << "  \"dynamic_observations\": ";
   out << to_json(report.dynamic_observations);

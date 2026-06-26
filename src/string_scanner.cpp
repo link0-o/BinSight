@@ -6,6 +6,33 @@
 
 namespace binsight {
 
+namespace {
+
+bool looks_like_rule_regex(const std::string& line) {
+  return line.find('|') != std::string::npos &&
+         (line.find("\\.") != std::string::npos || line.find("\\s") != std::string::npos ||
+          line.find("(?i)") != std::string::npos);
+}
+
+bool looks_like_configuration_string(const std::string& line) {
+  const std::string lower = lowercase(line);
+  if (lower.find("api_key") != std::string::npos || lower.find("apikey") != std::string::npos ||
+      lower.find("_api_key") != std::string::npos) {
+    return true;
+  }
+  return lower.find("api.openai.com") != std::string::npos ||
+         lower.find("api.deepseek.com") != std::string::npos ||
+         lower.find("api.moonshot.cn") != std::string::npos ||
+         lower.find("open.bigmodel.cn") != std::string::npos ||
+         lower.find("dashscope.aliyuncs.com") != std::string::npos ||
+         lower.find("api.siliconflow.cn") != std::string::npos ||
+         lower.find("openrouter.ai/api") != std::string::npos ||
+         lower.find("api.anthropic.com") != std::string::npos ||
+         lower.find("localhost:11434") != std::string::npos;
+}
+
+}  // namespace
+
 std::vector<SuspiciousString> StringScanner::scan(const std::string& strings_output,
                                                   std::size_t limit) const {
   struct Pattern {
@@ -27,6 +54,19 @@ std::vector<SuspiciousString> StringScanner::scan(const std::string& strings_out
   for (const auto& raw_line : split_lines(strings_output)) {
     const std::string line = trim(raw_line);
     if (line.empty() || line.size() > 300) {
+      continue;
+    }
+    if (looks_like_rule_regex(line)) {
+      continue;
+    }
+    if (looks_like_configuration_string(line)) {
+      const std::string key = "configuration\n" + line;
+      if (seen.insert(key).second) {
+        results.push_back({line, "configuration"});
+      }
+      if (results.size() >= limit) {
+        break;
+      }
       continue;
     }
     for (const auto& pattern : patterns) {

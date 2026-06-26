@@ -78,6 +78,8 @@ The fallback parser covers the minimum evidence needed when LIEF is unavailable:
 
 This built-in parser is classified as **Temporary / Prototype / Educational Implementation**. It exists as a fallback for offline or dependency-restricted development and must not be treated as the production parser while LIEF satisfies the same requirement.
 
+The built-in string classifier is also classified as **Temporary / Prototype / Educational Implementation**. It is a lightweight triage helper, not a full semantic string analysis engine. Rule parsing uses `yaml-cpp` instead of custom YAML parsing.
+
 ## External Tools
 
 Runtime scanning treats these tools as optional when available:

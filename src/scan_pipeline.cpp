@@ -37,7 +37,7 @@ bool has_static_inconclusive_finding(const AnalysisReport& report) {
   for (const auto& finding : report.rule_findings) {
     for (const auto& tag : finding.tags) {
       const auto lower = lowercase(tag);
-      if (lower == "static-inconclusive" || lower == "packing" || lower == "obfuscation") {
+      if (lower == "static-inconclusive") {
         return true;
       }
     }
@@ -117,7 +117,10 @@ AnalysisReport analyze_binary(const ScanOptions& options,
   report.rag_context = rag.retrieve(options.knowledge_dir, report, report.warnings);
 
   LlmClient llm{runner};
+  report.local_analysis = llm.local_analysis(options, report);
   report.ai_analysis = llm.analyze(options, report, report.warnings);
+  report.final_assessment = llm.fuse_assessments(report, report.local_analysis, report.ai_analysis,
+                                                 report.warnings);
   return report;
 }
 

@@ -22,7 +22,9 @@ Use `--report-lang zh-CN|en|both` to control Markdown output. JSON field names r
   "disassembly_snippets": [],
   "rule_findings": [],
   "rag_context": [],
+  "local_analysis": {},
   "ai_analysis": {},
+  "final_assessment": {},
   "dynamic_observations": {},
   "warnings": []
 }
@@ -36,10 +38,33 @@ Use `--report-lang zh-CN|en|both` to control Markdown output. JSON field names r
 - `sections`: section name, size, flags, entropy, and risk notes.
 - `strings`: suspicious strings with categories.
 - `disassembly_snippets`: bounded snippets with trigger reason.
-- `rule_findings`: deterministic rule hits and evidence.
+- `rule_findings`: deterministic rule hits, risk type, confidence, evidence strength, and evidence.
 - `rag_context`: local knowledge entries used for analysis.
-- `ai_analysis`: provider, model, summary, severity, risk sources, recommendations, and raw response.
+- `local_analysis`: deterministic baseline built from local rules.
+- `ai_analysis`: independent model assessment when an online provider is enabled; with `provider=none`, it mirrors local analysis.
+- `final_assessment`: fused conclusion from local and AI assessments. Automation should use this as the primary report verdict.
 - `dynamic_observations`: optional Linux Docker or imported runtime observation evidence. Static scans leave `present` false.
+
+## Assessment Fields
+
+`local_analysis`, `ai_analysis`, and `final_assessment` intentionally remain separate:
+
+- `local_analysis`: `severity`, `summary`, `risk_sources`, and `recommendations`.
+- `ai_analysis`: provider metadata plus `severity`, `confidence`, `summary`, `decision_basis`, `risk_sources`, `recommendations`, and `raw_response`.
+- `final_assessment`: `severity`, `summary`, `decision_basis`, `risk_sources`, and `recommendations`.
+
+If AI parsing or the provider call fails, `final_assessment` falls back to `local_analysis` and the failure is recorded in `warnings`.
+
+## Rule Finding Fields
+
+Each `rule_findings[]` item includes stable English fields:
+
+- `id`, `title`, `severity`, `description`, `recommendation`, `tags`, and `evidence`.
+- `risk_type`: `capability`, `suspicious`, or `malicious-likely`.
+- `confidence`: `low`, `medium`, or `high`.
+- `evidence_strength`: `weak`, `medium`, or `strong`.
+
+Consumers should avoid treating `capability` findings as confirmed malicious behavior.
 
 ## Dynamic Observation Fields
 

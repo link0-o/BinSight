@@ -78,6 +78,8 @@ fallback parser 在 LIEF 不可用时覆盖最低限度证据：
 
 该内置 parser 被归类为 **Temporary / Prototype / Educational Implementation**。它只作为离线或依赖受限环境下的 fallback；只要 LIEF 能满足同类需求，就不能把它当作生产级 parser。
 
+内置字符串分类器同样归类为 **Temporary / Prototype / Educational Implementation**。它只是轻量 triage helper，不是完整语义字符串分析引擎。规则解析使用 `yaml-cpp`，不再维护自研 YAML 解析器。
+
 ## 外部工具
 
 运行时会把以下工具当作可选增强：

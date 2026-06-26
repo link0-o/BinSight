@@ -9,11 +9,12 @@ binary input
   -> rule engine
   -> optional dynamic observation import
   -> local RAG retrieval
-  -> optional LLM analysis
+  -> optional LLM assessment
+  -> final assessment fusion
   -> Markdown + JSON report
 ```
 
-The scanner controls evidence extraction. The LLM does not decide whether to parse binaries or run optional enrichment tools; it only receives structured scan results and retrieved knowledge.
+The scanner controls evidence extraction. The LLM does not decide whether to parse binaries or run optional enrichment tools; it receives structured scan results and retrieved knowledge as a second assessor. Reports keep local, AI, and final fused assessments separate.
 
 ## Design Principle
 
@@ -23,6 +24,7 @@ Current status:
 
 - LIEF is the production PE/ELF parsing path for format, architecture, imports, and sections.
 - The built-in PE parser and external-tool ELF parser are **Temporary / Prototype / Educational Implementation** fallback paths.
+- The built-in string classifier is a **Temporary / Prototype / Educational Implementation** triage helper; it is intentionally conservative and should not be treated as behavioral proof.
 - `objdump` and `llvm-objdump` are optional disassembly enrichment tools, not core scan dependencies.
 
 ## Components
@@ -32,8 +34,8 @@ Current status:
 - `ProcessRunner`: invokes optional external tools and captures output.
 - `BinaryAnalyzer`: uses LIEF first for ELF/PE metadata, imports, sections, and static packing indicators, then falls back only when LIEF is disabled or parsing fails.
 - `LinuxDockerObserver`: optional lightweight Linux dynamic observation. It runs only through the explicit `observe linux-docker` command and is not a malware-grade sandbox.
-- `StringScanner`: classifies suspicious strings.
-- `RiskRuleEngine`: matches deterministic YAML rules and emits evidence.
+- `StringScanner`: classifies suspicious strings and separates configuration strings from risk evidence.
+- `RiskRuleEngine`: uses `yaml-cpp` to match deterministic YAML rules, evidence combinations, risk type, confidence, and evidence strength.
 - `LocalRagIndex`: retrieves local knowledge documents by keyword scoring.
 - `LlmClient`: adapts the OpenAI Responses API, OpenAI-compatible chat APIs, Anthropic-compatible APIs, Ollama, or offline mode. Provider presets map common vendors to these transport modes.
 - `ReportWriter`: writes Markdown and JSON reports.

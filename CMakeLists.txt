@@ -27,6 +27,37 @@ add_library(binsight_core
   src/types.cpp
   src/utils.cpp)
 target_include_directories(binsight_core PUBLIC include)
+find_package(yaml-cpp CONFIG QUIET)
+if(NOT TARGET yaml-cpp::yaml-cpp AND NOT TARGET yaml-cpp)
+  include(FetchContent)
+  set(YAML_CPP_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+  set(YAML_CPP_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+  set(YAML_CPP_BUILD_CONTRIB OFF CACHE BOOL "" FORCE)
+  set(YAML_BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+  set(CMAKE_POLICY_VERSION_MINIMUM 3.5 CACHE STRING "" FORCE)
+  FetchContent_Declare(
+    yaml-cpp
+    GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+    GIT_TAG 0.8.0)
+  FetchContent_MakeAvailable(yaml-cpp)
+endif()
+if(TARGET yaml-cpp::yaml-cpp)
+  target_link_libraries(binsight_core PUBLIC yaml-cpp::yaml-cpp)
+elseif(TARGET yaml-cpp)
+  target_link_libraries(binsight_core PUBLIC yaml-cpp)
+else()
+  message(FATAL_ERROR "yaml-cpp is required for rule parsing")
+endif()
+find_package(nlohmann_json CONFIG QUIET)
+if(NOT TARGET nlohmann_json::nlohmann_json)
+  include(FetchContent)
+  FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG v3.12.0)
+  FetchContent_MakeAvailable(nlohmann_json)
+endif()
+target_link_libraries(binsight_core PUBLIC nlohmann_json::nlohmann_json)
 if(WIN32)
   target_link_libraries(binsight_core PUBLIC Advapi32)
 endif()

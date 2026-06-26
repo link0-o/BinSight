@@ -79,6 +79,9 @@ struct RuleFinding {
   std::string id;
   std::string title;
   Severity severity = Severity::Info;
+  std::string risk_type = "suspicious";
+  std::string confidence = "medium";
+  std::string evidence_strength = "medium";
   std::vector<std::string> tags;
   std::string description;
   std::string recommendation;
@@ -95,14 +98,31 @@ struct RagEntry {
   std::vector<std::string> match_reasons;
 };
 
-struct AiAnalysis {
-  std::string provider = "none";
-  std::string model;
+struct RiskAssessment {
   Severity severity = Severity::Info;
   std::string summary;
   std::vector<std::string> risk_sources;
   std::vector<std::string> recommendations;
+};
+
+struct AiAnalysis {
+  std::string provider = "none";
+  std::string model;
+  Severity severity = Severity::Info;
+  std::string confidence = "low";
+  std::string summary;
+  std::string decision_basis;
+  std::vector<std::string> risk_sources;
+  std::vector<std::string> recommendations;
   std::string raw_response;
+};
+
+struct FinalAssessment {
+  Severity severity = Severity::Info;
+  std::string summary;
+  std::string decision_basis;
+  std::vector<std::string> risk_sources;
+  std::vector<std::string> recommendations;
 };
 
 struct DynamicProcessEvent {
@@ -152,7 +172,9 @@ struct AnalysisReport {
   std::vector<DisassemblySnippet> disassembly_snippets;
   std::vector<RuleFinding> rule_findings;
   std::vector<RagEntry> rag_context;
+  RiskAssessment local_analysis;
   AiAnalysis ai_analysis;
+  FinalAssessment final_assessment;
   DynamicObservations dynamic_observations;
   std::vector<std::string> warnings;
 };

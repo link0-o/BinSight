@@ -2,7 +2,7 @@
 
 中文文档: [README.zh-CN.md](README.zh-CN.md)
 
-BinSight scans executable files and produces evidence-grounded risk reports. It uses a deterministic scan pipeline, local risk rules, local RAG knowledge, and an optional LLM analysis step. The scanner is not a fully autonomous agent: tool execution is fixed and auditable, while the LLM explains risk from observed evidence.
+BinSight scans executable files and produces evidence-grounded risk reports. It uses a deterministic scan pipeline, local risk rules, local RAG knowledge, and an optional LLM assessment step. The scanner is not a fully autonomous agent: tool execution is fixed and auditable, while reports keep local, AI, and final fused assessments separate.
 
 ## Features
 
