@@ -46,7 +46,7 @@ cmake --build build
 Linux package prerequisite example:
 
 ```bash
-sudo apt-get install qt6-base-dev
+sudo apt-get install qt6-base-dev nlohmann-json3-dev
 ```
 
 Windows developers can install Qt 6 for MSVC 2022 and make it discoverable with `CMAKE_PREFIX_PATH` if CMake cannot find it automatically.
@@ -78,7 +78,7 @@ The fallback parser covers the minimum evidence needed when LIEF is unavailable:
 
 This built-in parser is classified as **Temporary / Prototype / Educational Implementation**. It exists as a fallback for offline or dependency-restricted development and must not be treated as the production parser while LIEF satisfies the same requirement.
 
-The built-in string classifier is also classified as **Temporary / Prototype / Educational Implementation**. It is a lightweight triage helper, not a full semantic string analysis engine. Rule parsing uses `yaml-cpp` instead of custom YAML parsing.
+The built-in string classifier is also classified as **Temporary / Prototype / Educational Implementation**. It is a lightweight triage helper, not a full semantic string analysis engine. Rule parsing uses `yaml-cpp` instead of custom YAML parsing. AI assessment parsing uses `nlohmann/json` for structured model responses.
 
 ## External Tools
 

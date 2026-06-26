@@ -13,6 +13,9 @@ After extraction:
 ```text
 BinSight/
   bin/binsight.exe
+  bin/binsight-gui.exe
+  bin/Qt6*.dll
+  bin/platforms/qwindows.dll
   rules/default-rules.yaml
   knowledge/*.md
   docs/
@@ -30,7 +33,7 @@ Open the GUI when the release package includes it:
 .\bin\binsight.exe gui
 ```
 
-The GUI supports drag and drop, AI provider/model presets, secure API key saving through Windows Credential Manager, and buttons to open the generated Chinese report, English report, JSON report, and output directory.
+The GUI supports drag and drop, AI provider/model presets, secure API key saving through Windows Credential Manager, and buttons to open the generated Chinese report, English report, JSON report, and output directory. Release packages include the required Qt runtime DLLs beside `binsight-gui.exe`.
 
 Default outputs:
 

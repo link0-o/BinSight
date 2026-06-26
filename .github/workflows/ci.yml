@@ -21,7 +21,7 @@ jobs:
 
       - name: Install Qt on Ubuntu
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev nlohmann-json3-dev
 
       - name: Install Qt on Windows
         if: runner.os == 'Windows'
@@ -40,6 +40,27 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure --verbose
+
+      - name: Report schema smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            binsight_bin="./build/Release/binsight.exe"
+          else
+            binsight_bin="./build/binsight"
+          fi
+
+          "$binsight_bin" scan "$binsight_bin" \
+            --provider none \
+            --rules-dir ./rules \
+            --knowledge-dir ./knowledge \
+            --out ci-report.md \
+            --json ci-report.json \
+            --report-lang zh-CN
+
+          grep -q '"local_analysis"' ci-report.json
+          grep -q '"ai_analysis"' ci-report.json
+          grep -q '"final_assessment"' ci-report.json
 
       - name: CLI help smoke test
         shell: bash

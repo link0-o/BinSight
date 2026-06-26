@@ -29,7 +29,7 @@ jobs:
 
       - name: Install Qt on Ubuntu
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev
+        run: sudo apt-get update && sudo apt-get install -y qt6-base-dev nlohmann-json3-dev
 
       - name: Install Qt on Windows
         if: runner.os == 'Windows'
@@ -48,6 +48,27 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure --verbose
+
+      - name: Report schema smoke test
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            binsight_bin="./build/Release/binsight.exe"
+          else
+            binsight_bin="./build/binsight"
+          fi
+
+          "$binsight_bin" scan "$binsight_bin" \
+            --provider none \
+            --rules-dir ./rules \
+            --knowledge-dir ./knowledge \
+            --out release-report.md \
+            --json release-report.json \
+            --report-lang zh-CN
+
+          grep -q '"local_analysis"' release-report.json
+          grep -q '"ai_analysis"' release-report.json
+          grep -q '"final_assessment"' release-report.json
 
       - name: GUI help smoke test
         shell: bash
@@ -70,6 +91,21 @@ jobs:
         run: |
           package="$(find . -maxdepth 1 \( -name 'BinSight-*.zip' -o -name 'BinSight-*.tar.gz' \) | head -n 1)"
           mv "$package" "${{ matrix.artifact }}"
+
+      - name: Validate Windows GUI runtime package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $entries = @(tar -tf "${{ matrix.artifact }}")
+          if (-not ($entries | Select-String -SimpleMatch "Qt6Core.dll")) {
+            throw "Windows package is missing Qt6Core.dll"
+          }
+          if (-not ($entries | Select-String -SimpleMatch "Qt6Widgets.dll")) {
+            throw "Windows package is missing Qt6Widgets.dll"
+          }
+          if (-not ($entries | Select-String -Pattern "platforms[/\\]qwindows.dll")) {
+            throw "Windows package is missing platforms/qwindows.dll"
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

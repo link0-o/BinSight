@@ -13,6 +13,9 @@ BinSight-vX.Y.Z-windows-x86_64.zip
 ```text
 BinSight/
   bin/binsight.exe
+  bin/binsight-gui.exe
+  bin/Qt6*.dll
+  bin/platforms/qwindows.dll
   rules/default-rules.yaml
   knowledge/*.md
   docs/
@@ -30,7 +33,7 @@ BinSight/
 .\bin\binsight.exe gui
 ```
 
-GUI 支持拖拽文件、AI Provider/模型 preset、通过 Windows Credential Manager 安全保存 API key，以及打开中文报告、英文报告、JSON 和输出目录。
+GUI 支持拖拽文件、AI Provider/模型 preset、通过 Windows Credential Manager 安全保存 API key，以及打开中文报告、英文报告、JSON 和输出目录。发行包会把所需 Qt 运行时 DLL 放在 `binsight-gui.exe` 旁边。
 
 默认生成：
 

@@ -5,7 +5,7 @@
 Use git tags in the form:
 
 ```text
-v0.1.0
+v0.2.0
 ```
 
 The CMake project version should be updated before creating a new release tag.
@@ -30,6 +30,7 @@ The package contains:
 
 - `bin/binsight` or `bin/binsight.exe`
 - `bin/binsight-gui` or `bin/binsight-gui.exe` when Qt is available at build time
+- required Qt runtime DLLs in Windows GUI packages, deployed with Qt's official `windeployqt`
 - `rules/`
 - `knowledge/`
 - `docs/`
@@ -43,14 +44,16 @@ The package contains:
 Create and push a tag:
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 The release workflow builds and uploads:
 
-- `BinSight-v0.1.0-linux-x86_64.tar.gz`
-- `BinSight-v0.1.0-windows-x86_64.zip`
+- `BinSight-v0.2.0-linux-x86_64.tar.gz`
+- `BinSight-v0.2.0-windows-x86_64.zip`
+
+The Windows release job validates that GUI packages contain `Qt6Core.dll`, `Qt6Widgets.dll`, and `platforms/qwindows.dll`.
 
 ## Smoke Test
 

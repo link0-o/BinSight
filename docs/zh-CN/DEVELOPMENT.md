@@ -46,7 +46,7 @@ cmake --build build
 Linux 依赖示例：
 
 ```bash
-sudo apt-get install qt6-base-dev
+sudo apt-get install qt6-base-dev nlohmann-json3-dev
 ```
 
 Windows 开发者可以安装 MSVC 2022 对应的 Qt 6。如果 CMake 不能自动找到 Qt，可以设置 `CMAKE_PREFIX_PATH`。
@@ -78,7 +78,7 @@ fallback parser 在 LIEF 不可用时覆盖最低限度证据：
 
 该内置 parser 被归类为 **Temporary / Prototype / Educational Implementation**。它只作为离线或依赖受限环境下的 fallback；只要 LIEF 能满足同类需求，就不能把它当作生产级 parser。
 
-内置字符串分类器同样归类为 **Temporary / Prototype / Educational Implementation**。它只是轻量 triage helper，不是完整语义字符串分析引擎。规则解析使用 `yaml-cpp`，不再维护自研 YAML 解析器。
+内置字符串分类器同样归类为 **Temporary / Prototype / Educational Implementation**。它只是轻量 triage helper，不是完整语义字符串分析引擎。规则解析使用 `yaml-cpp`，不再维护自研 YAML 解析器。AI 评估解析使用 `nlohmann/json` 处理模型返回的结构化 JSON。
 
 ## 外部工具
 

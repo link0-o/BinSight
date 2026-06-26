@@ -5,7 +5,7 @@
 使用这种 tag 格式：
 
 ```text
-v0.1.0
+v0.2.0
 ```
 
 创建新发行版前，应先更新 CMake 项目版本号。
@@ -30,6 +30,7 @@ cmake --build build --target package
 
 - `bin/binsight` 或 `bin/binsight.exe`
 - 打包时 Qt 可用则包含 `bin/binsight-gui` 或 `bin/binsight-gui.exe`
+- Windows GUI 发行包会使用 Qt 官方 `windeployqt` 部署所需 Qt 运行时 DLL
 - `rules/`
 - `knowledge/`
 - `docs/`
@@ -43,14 +44,16 @@ cmake --build build --target package
 创建并推送 tag：
 
 ```bash
-git tag v0.1.0
-git push origin v0.1.0
+git tag v0.2.0
+git push origin v0.2.0
 ```
 
 GitHub Actions 会自动构建并上传：
 
-- `BinSight-v0.1.0-linux-x86_64.tar.gz`
-- `BinSight-v0.1.0-windows-x86_64.zip`
+- `BinSight-v0.2.0-linux-x86_64.tar.gz`
+- `BinSight-v0.2.0-windows-x86_64.zip`
+
+Windows Release job 会检查 GUI 包里是否包含 `Qt6Core.dll`、`Qt6Widgets.dll` 和 `platforms/qwindows.dll`。
 
 ## 验收测试
 

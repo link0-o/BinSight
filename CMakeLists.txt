@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(BinSight
-  VERSION 0.1.0
+  VERSION 0.2.0
   DESCRIPTION "Deterministic binary scanning with rule, RAG, and LLM risk analysis"
   LANGUAGES CXX)
 
@@ -130,6 +130,25 @@ include(GNUInstallDirs)
 install(TARGETS binsight RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 if(TARGET binsight-gui)
   install(TARGETS binsight-gui RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  if(WIN32)
+    find_program(BINSIGHT_WINDEPLOYQT_EXECUTABLE
+      NAMES windeployqt
+      HINTS "${Qt6_DIR}/../../../bin")
+    if(BINSIGHT_WINDEPLOYQT_EXECUTABLE)
+      install(CODE "
+        message(STATUS \"Deploying Qt runtime for binsight-gui with windeployqt\")
+        execute_process(
+          COMMAND \"${BINSIGHT_WINDEPLOYQT_EXECUTABLE}\" --release --no-translations --no-system-d3d-compiler --no-opengl-sw \"\${CMAKE_INSTALL_PREFIX}/${CMAKE_INSTALL_BINDIR}/binsight-gui.exe\"
+          RESULT_VARIABLE binsight_windeployqt_result
+        )
+        if(NOT binsight_windeployqt_result EQUAL 0)
+          message(FATAL_ERROR \"windeployqt failed with exit code \${binsight_windeployqt_result}\")
+        endif()
+      ")
+    else()
+      message(WARNING "windeployqt was not found; Windows GUI packages may require Qt runtime DLLs beside binsight-gui.exe")
+    endif()
+  endif()
 endif()
 install(DIRECTORY rules knowledge docs docker DESTINATION .)
 install(FILES README.md README.zh-CN.md LICENSE DESTINATION .)
