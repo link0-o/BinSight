@@ -502,6 +502,19 @@ int main(int argc, char** argv) {
           "JSON report should contain dynamic observations");
     std::ifstream zh_in(zh_path);
     std::string zh_content((std::istreambuf_iterator<char>(zh_in)), std::istreambuf_iterator<char>());
+#ifdef _WIN32
+    check(zh_content.size() >= 3 &&
+              static_cast<unsigned char>(zh_content[0]) == 0xEF &&
+              static_cast<unsigned char>(zh_content[1]) == 0xBB &&
+              static_cast<unsigned char>(zh_content[2]) == 0xBF,
+          "Windows Chinese Markdown report should include UTF-8 BOM for editor detection");
+#else
+    check(!(zh_content.size() >= 3 &&
+              static_cast<unsigned char>(zh_content[0]) == 0xEF &&
+              static_cast<unsigned char>(zh_content[1]) == 0xBB &&
+              static_cast<unsigned char>(zh_content[2]) == 0xBF),
+          "Non-Windows Chinese Markdown report should not include a UTF-8 BOM");
+#endif
     check(zh_content.find("## 目标文件") != std::string::npos, "Chinese report should use Chinese headings");
     check(zh_content.find("## 最终评估") != std::string::npos,
           "Chinese report should include final assessment");
@@ -529,6 +542,11 @@ int main(int argc, char** argv) {
     check(zh_content.find("Target /") == std::string::npos, "Chinese report should not use mixed headings");
     std::ifstream en_in(en_path);
     std::string en_content((std::istreambuf_iterator<char>(en_in)), std::istreambuf_iterator<char>());
+    check(!(en_content.size() >= 3 &&
+              static_cast<unsigned char>(en_content[0]) == 0xEF &&
+              static_cast<unsigned char>(en_content[1]) == 0xBB &&
+              static_cast<unsigned char>(en_content[2]) == 0xBF),
+          "English Markdown report should not need a UTF-8 BOM");
     check(en_content.find("## Target") != std::string::npos, "English report should use English headings");
     check(en_content.find("## Final Assessment") != std::string::npos,
           "English report should include final assessment");

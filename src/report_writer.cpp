@@ -612,7 +612,15 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
     markdown_list(out, report.warnings, "None");
   }
 
+#ifdef _WIN32
+  if (language == ReportLanguage::Chinese) {
+    write_file_utf8_bom(path, out.str());
+  } else {
+    write_file(path, out.str());
+  }
+#else
   write_file(path, out.str());
+#endif
 }
 
 void ReportWriter::write_json(const std::filesystem::path& path,

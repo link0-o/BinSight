@@ -10,6 +10,7 @@ Default scan output:
 
 Use `--report-lang zh-CN|en|both` to control Markdown output. JSON field names remain stable English identifiers and do not change with report language.
 Markdown reports are language-localized for human readers. In `both` mode, online AI assessment text is requested separately for Chinese and English Markdown when a provider is enabled. JSON keeps one stable primary assessment for automation.
+Chinese Markdown is written as UTF-8 with BOM for reliable Windows editor encoding detection. JSON remains UTF-8 without BOM.
 
 ## JSON Top Level
 

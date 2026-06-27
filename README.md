@@ -113,6 +113,7 @@ By default BinSight writes:
 - `report.json`
 
 When an online AI provider is enabled and `--report-lang both` is used, BinSight requests language-specific AI assessment text for the Chinese and English Markdown reports separately. This may use more than one model request, but keeps each human report language-consistent.
+Chinese Markdown reports are written as UTF-8 with BOM so Windows editors can detect the encoding reliably.
 
 Choose a single Markdown language when needed:
 
