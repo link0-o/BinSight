@@ -33,6 +33,7 @@ BinSight 是一个用于扫描可执行文件并生成风险分析报告的 C++2
 Windows：
 
 ```powershell
+.\打开 BinSight 图形界面.cmd
 .\bin\binsight.exe scan .\sample.exe
 .\bin\binsight.exe gui
 ```
@@ -44,7 +45,7 @@ Linux：
 ./bin/binsight gui
 ```
 
-发行包会包含 `rules/`、`knowledge/`、`docs/` 和 `docker/`。如果构建时包含 Qt，还会包含 `bin/binsight-gui` 或 `bin/binsight-gui.exe`。Windows GUI 发行包会使用 Qt 官方 `windeployqt` 工具一起部署所需 Qt 运行时 DLL。如果没有传 `--rules-dir` 或 `--knowledge-dir`，BinSight 会自动从发行包目录查找默认规则和知识库。
+发行包会包含 `rules/`、`knowledge/`、`docs/` 和 `docker/`。如果构建时包含 Qt，还会包含 `bin/binsight-gui` 或 `bin/binsight-gui.exe`。Windows GUI 发行包会使用 Qt 官方 `windeployqt` 工具一起部署所需 Qt 运行时 DLL。Windows 包根目录还会提供 `.lnk` 快捷方式和 `.cmd` 兜底启动器，方便新手直接双击使用。如果没有传 `--rules-dir` 或 `--knowledge-dir`，BinSight 会自动从发行包目录查找默认规则和知识库。
 
 ## 从源码构建
 
@@ -249,8 +250,8 @@ cmake --build build --target package
 GitHub 自动发布：
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 推送 `v*` tag 后，GitHub Actions 会自动构建 Linux/Windows 压缩包并上传到 GitHub Releases。

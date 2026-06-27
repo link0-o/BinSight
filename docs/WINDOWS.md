@@ -12,6 +12,9 @@ After extraction:
 
 ```text
 BinSight/
+  Open BinSight GUI.lnk
+  Open BinSight GUI.cmd
+  README-FIRST.en.txt
   bin/binsight.exe
   bin/binsight-gui.exe
   bin/Qt6*.dll
@@ -21,7 +24,9 @@ BinSight/
   docs/
 ```
 
-Run an offline scan:
+New users can double-click `Open BinSight GUI.lnk`, then drag a sample into the GUI drop area.
+
+Advanced CLI offline scan:
 
 ```powershell
 .\bin\binsight.exe scan .\sample.exe

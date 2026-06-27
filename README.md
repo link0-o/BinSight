@@ -33,6 +33,7 @@ For normal use, download a package from GitHub Releases:
 Windows:
 
 ```powershell
+.\Open BinSight GUI.lnk
 .\bin\binsight.exe scan .\sample.exe
 .\bin\binsight.exe gui
 ```
@@ -44,7 +45,7 @@ Linux:
 ./bin/binsight gui
 ```
 
-The release package includes `rules/`, `knowledge/`, `docs/`, and `docker/`. If the build includes Qt, it also includes `bin/binsight-gui` or `bin/binsight-gui.exe`. Windows GUI packages deploy the required Qt runtime DLLs with Qt's official `windeployqt` tool. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
+The release package includes `rules/`, `knowledge/`, `docs/`, and `docker/`. If the build includes Qt, it also includes `bin/binsight-gui` or `bin/binsight-gui.exe`. Windows GUI packages deploy the required Qt runtime DLLs with Qt's official `windeployqt` tool. Windows packages also include root-level `.lnk` shortcuts and `.cmd` launchers for new users. If `--rules-dir` or `--knowledge-dir` is not provided, BinSight looks for those directories beside the executable package layout.
 
 ## Build From Source
 
@@ -237,8 +238,8 @@ cmake --build build --target package
 GitHub release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 Tag pushes trigger the release workflow and upload Linux/Windows packages to GitHub Releases.

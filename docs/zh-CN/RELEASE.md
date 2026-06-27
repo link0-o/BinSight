@@ -5,7 +5,7 @@
 使用这种 tag 格式：
 
 ```text
-v0.2.0
+v0.3.1
 ```
 
 创建新发行版前，应先更新 CMake 项目版本号。
@@ -28,6 +28,7 @@ cmake --build build --target package
 
 压缩包内容包括：
 
+- Windows 包根目录的新手快捷方式和命令启动器
 - `bin/binsight` 或 `bin/binsight.exe`
 - 打包时 Qt 可用则包含 `bin/binsight-gui` 或 `bin/binsight-gui.exe`
 - Windows GUI 发行包会使用 Qt 官方 `windeployqt` 部署所需 Qt 运行时 DLL
@@ -44,16 +45,16 @@ cmake --build build --target package
 创建并推送 tag：
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.1
+git push origin v0.3.1
 ```
 
 GitHub Actions 会自动构建并上传：
 
-- `BinSight-v0.2.0-linux-x86_64.tar.gz`
-- `BinSight-v0.2.0-windows-x86_64.zip`
+- `BinSight-v0.3.1-linux-x86_64.tar.gz`
+- `BinSight-v0.3.1-windows-x86_64.zip`
 
-Windows Release job 会检查 GUI 包里是否包含 `Qt6Core.dll`、`Qt6Widgets.dll` 和 `platforms/qwindows.dll`。
+Windows Release job 会检查 GUI 包里是否包含 `Qt6Core.dll`、`Qt6Widgets.dll` 和 `platforms/qwindows.dll`。它也会生成根目录 GUI `.lnk` 快捷方式，并验证 `.lnk`、`.cmd` 和 README-FIRST 入口文件。
 
 ## 验收测试
 

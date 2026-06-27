@@ -93,19 +93,73 @@ jobs:
           package="$(find . -maxdepth 1 \( -name 'BinSight-*.zip' -o -name 'BinSight-*.tar.gz' \) | head -n 1)"
           mv "$package" "${{ matrix.artifact }}"
 
+      - name: Add Windows root shortcuts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $artifact = "${{ matrix.artifact }}"
+          $stage = Join-Path $env:RUNNER_TEMP "binsight-shortcuts"
+          if (Test-Path $stage) {
+            Remove-Item -Recurse -Force $stage
+          }
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Expand-Archive -Path $artifact -DestinationPath $stage -Force
+
+          $roots = @(Get-ChildItem -Path $stage -Directory)
+          if ($roots.Count -ne 1) {
+            throw "Expected one package root after extracting $artifact, found $($roots.Count)"
+          }
+          $root = $roots[0].FullName
+
+          Copy-Item -LiteralPath "packaging/windows/打开 BinSight 图形界面.cmd" -Destination $root -Force
+
+          $shell = New-Object -ComObject WScript.Shell
+
+          $guiShortcutEn = $shell.CreateShortcut((Join-Path $root "Open BinSight GUI.lnk"))
+          $guiShortcutEn.TargetPath = Join-Path $root "bin\binsight.exe"
+          $guiShortcutEn.Arguments = "gui"
+          $guiShortcutEn.WorkingDirectory = $root
+          $guiShortcutEn.IconLocation = Join-Path $root "bin\binsight-gui.exe"
+          $guiShortcutEn.Description = "Open BinSight GUI"
+          $guiShortcutEn.Save()
+
+          Remove-Item -Force $artifact
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $artifact -Force
+
       - name: Validate Windows GUI runtime package
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $entries = @(tar -tf "${{ matrix.artifact }}")
-          if (-not ($entries | Select-String -SimpleMatch "Qt6Core.dll")) {
-            throw "Windows package is missing Qt6Core.dll"
+          $artifact = "${{ matrix.artifact }}"
+          $validateRoot = Join-Path $env:RUNNER_TEMP "binsight-package-validate"
+          if (Test-Path $validateRoot) {
+            Remove-Item -Recurse -Force $validateRoot
           }
-          if (-not ($entries | Select-String -SimpleMatch "Qt6Widgets.dll")) {
-            throw "Windows package is missing Qt6Widgets.dll"
+          New-Item -ItemType Directory -Path $validateRoot | Out-Null
+          Expand-Archive -Path $artifact -DestinationPath $validateRoot -Force
+
+          $roots = @(Get-ChildItem -Path $validateRoot -Directory)
+          if ($roots.Count -ne 1) {
+            throw "Expected one package root after extracting $artifact, found $($roots.Count)"
           }
-          if (-not ($entries | Select-String -Pattern "platforms[/\\]qwindows.dll")) {
-            throw "Windows package is missing platforms/qwindows.dll"
+          $root = $roots[0].FullName
+
+          $required = @(
+            "bin\Qt6Core.dll",
+            "bin\Qt6Widgets.dll",
+            "bin\platforms\qwindows.dll",
+            "Open BinSight GUI.lnk",
+            "打开 BinSight 图形界面.cmd",
+            "Open BinSight GUI.cmd",
+            "README-FIRST.zh-CN.txt",
+            "README-FIRST.en.txt"
+          )
+
+          foreach ($relative in $required) {
+            $path = Join-Path $root $relative
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Windows package is missing required file: $relative"
+            }
           }
 
       - name: Upload artifact

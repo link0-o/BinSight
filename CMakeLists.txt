@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.24)
 
 project(BinSight
-  VERSION 0.2.0
+  VERSION 0.3.1
   DESCRIPTION "Deterministic binary scanning with rule, RAG, and LLM risk analysis"
   LANGUAGES CXX)
 
@@ -161,6 +161,13 @@ if(TARGET binsight-gui)
 endif()
 install(DIRECTORY rules knowledge docs docker DESTINATION .)
 install(FILES README.md README.zh-CN.md LICENSE DESTINATION .)
+if(WIN32)
+  install(FILES
+    "packaging/windows/Open BinSight GUI.cmd"
+    "packaging/windows/README-FIRST.zh-CN.txt"
+    "packaging/windows/README-FIRST.en.txt"
+    DESTINATION .)
+endif()
 
 set(CPACK_PACKAGE_NAME "BinSight")
 set(CPACK_PACKAGE_VENDOR "BinSight")

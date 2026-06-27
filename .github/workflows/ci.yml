@@ -71,6 +71,8 @@ jobs:
             if [ -f ./build/Release/binsight-gui.exe ]; then
               ./build/Release/binsight-gui.exe --help
             fi
+            test -f "packaging/windows/打开 BinSight 图形界面.cmd"
+            test -f "packaging/windows/README-FIRST.zh-CN.txt"
           else
             ./build/binsight --help
             if [ -f ./build/binsight-gui ]; then

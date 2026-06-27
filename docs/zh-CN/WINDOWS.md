@@ -12,6 +12,9 @@ BinSight-vX.Y.Z-windows-x86_64.zip
 
 ```text
 BinSight/
+  Open BinSight GUI.lnk
+  打开 BinSight 图形界面.cmd
+  README-FIRST.zh-CN.txt
   bin/binsight.exe
   bin/binsight-gui.exe
   bin/Qt6*.dll
@@ -21,7 +24,9 @@ BinSight/
   docs/
 ```
 
-运行离线扫描：
+新手可以直接双击 `打开 BinSight 图形界面.cmd`，或双击英文快捷方式 `Open BinSight GUI.lnk`，然后把样本拖到 Qt 图形界面上方的拖拽区域。
+
+高级命令行离线扫描：
 
 ```powershell
 .\bin\binsight.exe scan .\sample.exe
