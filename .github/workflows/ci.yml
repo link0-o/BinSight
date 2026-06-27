@@ -33,7 +33,7 @@ jobs:
           arch: win64_msvc2022_64
 
       - name: Configure
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_USE_LIEF=ON -DBINSIGHT_BUILD_GUI=AUTO
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBINSIGHT_USE_LIEF=ON -DBINSIGHT_USE_ETW=AUTO -DBINSIGHT_BUILD_GUI=AUTO
 
       - name: Build
         run: cmake --build build --config Release
@@ -67,6 +67,7 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
             ./build/Release/binsight.exe --help
+            ./build/Release/binsight.exe observe windows-etw --help
             if [ -f ./build/Release/binsight-gui.exe ]; then
               ./build/Release/binsight-gui.exe --help
             fi

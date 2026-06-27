@@ -14,7 +14,7 @@ BinSight scans executable files and produces evidence-grounded risk reports. It 
 - Suspicious ASCII and UTF-16LE string extraction without an external `strings` command.
 - Optional bounded disassembly snippets when `objdump` or `llvm-objdump` is available.
 - YAML-style risk rules, local Markdown RAG context, and Markdown/JSON reports.
-- Safe-by-default static mode plus explicit Linux Docker dynamic observation.
+- Safe-by-default static mode plus explicit Linux Docker and Windows ETW expert dynamic observation.
 - LLM providers:
   - `none` for offline rule-only reports.
   - `openai` for the official OpenAI Responses API.
@@ -106,6 +106,20 @@ docker build -t binsight-observer:latest docker/linux-observer
 
 Docker observation is not a malware-grade sandbox. It uses constrained container settings and disables networking by default, but containers share the host kernel. Use it only on lab machines or samples you are prepared to execute. For high-risk packed malware, use a dedicated VM or professional sandbox.
 
+Windows ETW expert observation:
+
+```powershell
+.\bin\binsight.exe observe windows-etw .\sample.exe `
+  --out dynamic.json `
+  --i-understand-risk `
+  --timeout 90 `
+  --max-events 5000 `
+  --max-json-bytes 10485760
+.\bin\binsight.exe scan .\sample.exe --dynamic-report dynamic.json
+```
+
+Windows ETW expert observation executes the target on the local Windows host. It is not a sandbox and cannot block malicious behavior. It writes only bounded JSON summaries, not raw `.etl` logs, so release size and per-run storage stay controlled. See [Windows ETW Observation](docs/WINDOWS_ETW_OBSERVATION.md).
+
 By default BinSight writes:
 
 - `report.zh-CN.md`
@@ -113,7 +127,7 @@ By default BinSight writes:
 - `report.json`
 
 When an online AI provider is enabled and `--report-lang both` is used, BinSight requests language-specific AI assessment text for the Chinese and English Markdown reports separately. This may use more than one model request, but keeps each human report language-consistent.
-Chinese Markdown reports are written as UTF-8 with BOM so Windows editors can detect the encoding reliably.
+Windows builds write Chinese Markdown reports as UTF-8 with BOM so Windows editors can detect the encoding reliably. Linux and macOS builds keep Markdown as UTF-8 without BOM.
 
 Choose a single Markdown language when needed:
 

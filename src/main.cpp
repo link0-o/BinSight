@@ -5,6 +5,7 @@
 #include <binsight/utils.hpp>
 
 #include <cstdlib>
+#include <cstdint>
 #include <exception>
 #include <filesystem>
 #include <iostream>
@@ -110,6 +111,9 @@ void print_usage() {
       << "  binsight observe linux-docker <binary> --out dynamic.json --i-understand-risk\n"
       << "                 [--image binsight-observer:latest] [--timeout 30]\n"
       << "                 [--network none|bridge]\n"
+      << "  binsight observe windows-etw <binary> --out dynamic.json --i-understand-risk\n"
+      << "                 [--timeout 90] [--max-events 5000]\n"
+      << "                 [--max-json-bytes 10485760] [--network observe|off]\n"
       << "  binsight gui\n"
       << "  binsight config wizard\n"
       << "  binsight config show\n"
@@ -228,6 +232,13 @@ std::string dynamic_risk_notice() {
   return "Dynamic observation may execute the target. Docker reduces accidental host interaction "
          "but is not a malware-grade sandbox because containers share the host kernel. Use only on "
          "a lab machine or samples you are prepared to execute.";
+}
+
+std::string windows_etw_risk_notice() {
+  return "Windows ETW expert observation executes the target on the local Windows host. "
+         "BinSight records bounded runtime evidence, but it is not a sandbox and cannot "
+         "block malicious behavior. Use only on a lab machine or samples you are prepared "
+         "to execute.";
 }
 
 bool has_graphical_session() {
@@ -520,28 +531,81 @@ int handle_observe(int argc, char** argv) {
     return 1;
   }
   const std::string mode = argv[2];
-  if (mode != "linux-docker") {
+  if (mode != "linux-docker" && mode != "windows-etw") {
     std::cerr << "binsight: unsupported observe mode: " << mode << '\n';
     print_usage();
     return 1;
   }
   if (argc < 4) {
-    std::cerr << "binsight: observe linux-docker requires a binary path\n";
+    std::cerr << "binsight: observe " << mode << " requires a binary path\n";
     print_usage();
     return 1;
   }
+  if (std::string(argv[3]) == "--help" || std::string(argv[3]) == "-h") {
+    print_usage();
+    return 0;
+  }
 
-  binsight::DockerObserveOptions options;
+  if (mode == "linux-docker") {
+    binsight::DockerObserveOptions options;
+    options.binary_path = argv[3];
+    for (int i = 4; i < argc; ++i) {
+      const std::string arg = argv[i];
+      std::string value;
+      if (arg == "--out" && next_value(i, argc, argv, value)) {
+        options.output_path = value;
+      } else if (arg == "--image" && next_value(i, argc, argv, value)) {
+        options.image = value;
+      } else if (arg == "--timeout" && next_value(i, argc, argv, value)) {
+        options.timeout_seconds = std::stoi(value);
+      } else if (arg == "--network" && next_value(i, argc, argv, value)) {
+        options.network_mode = value;
+      } else if (arg == "--i-understand-risk") {
+        options.risk_accepted = true;
+      } else {
+        std::cerr << "binsight: invalid or incomplete observe option: " << arg << '\n';
+        print_usage();
+        return 1;
+      }
+    }
+
+    if (!options.risk_accepted) {
+      std::cerr << "binsight: refusing to run dynamic observation without --i-understand-risk\n\n"
+                << dynamic_risk_notice() << '\n';
+      return 2;
+    }
+    if (options.network_mode != "none" && options.network_mode != "bridge") {
+      std::cerr << "binsight: observe linux-docker network mode must be none or bridge\n";
+      return 1;
+    }
+
+    std::vector<std::string> warnings;
+    binsight::LinuxDockerObserver observer{binsight::ProcessRunner{}};
+    const auto observations = observer.observe(options, warnings);
+    if (!observations.present) {
+      std::cerr << "binsight: dynamic observation failed to start\n";
+      return 1;
+    }
+    std::cout << "Dynamic report: " << options.output_path << '\n';
+    if (!warnings.empty()) {
+      std::cout << "Warnings: " << warnings.size() << '\n';
+    }
+    return warnings.empty() ? 0 : 1;
+  }
+
+  binsight::WindowsEtwObserveOptions options;
   options.binary_path = argv[3];
   for (int i = 4; i < argc; ++i) {
     const std::string arg = argv[i];
     std::string value;
     if (arg == "--out" && next_value(i, argc, argv, value)) {
       options.output_path = value;
-    } else if (arg == "--image" && next_value(i, argc, argv, value)) {
-      options.image = value;
     } else if (arg == "--timeout" && next_value(i, argc, argv, value)) {
       options.timeout_seconds = std::stoi(value);
+    } else if (arg == "--max-events" && next_value(i, argc, argv, value)) {
+      options.max_events = static_cast<std::uint64_t>(std::stoull(value));
+    } else if (arg == "--max-json-bytes" && next_value(i, argc, argv, value)) {
+      options.max_json_bytes = static_cast<std::uint64_t>(std::stoull(value));
     } else if (arg == "--network" && next_value(i, argc, argv, value)) {
       options.network_mode = value;
     } else if (arg == "--i-understand-risk") {
@@ -554,20 +618,20 @@ int handle_observe(int argc, char** argv) {
   }
 
   if (!options.risk_accepted) {
-    std::cerr << "binsight: refusing to run dynamic observation without --i-understand-risk\n\n"
-              << dynamic_risk_notice() << '\n';
+    std::cerr << "binsight: refusing to run Windows ETW expert observation without --i-understand-risk\n\n"
+              << windows_etw_risk_notice() << '\n';
     return 2;
   }
-  if (options.network_mode != "none" && options.network_mode != "bridge") {
-    std::cerr << "binsight: observe linux-docker network mode must be none or bridge\n";
+  if (options.network_mode != "observe" && options.network_mode != "off") {
+    std::cerr << "binsight: observe windows-etw network mode must be observe or off\n";
     return 1;
   }
 
   std::vector<std::string> warnings;
-  binsight::LinuxDockerObserver observer{binsight::ProcessRunner{}};
+  binsight::WindowsEtwObserver observer;
   const auto observations = observer.observe(options, warnings);
   if (!observations.present) {
-    std::cerr << "binsight: dynamic observation failed to start\n";
+    std::cerr << "binsight: Windows ETW observation failed to start\n";
     return 1;
   }
   std::cout << "Dynamic report: " << options.output_path << '\n';

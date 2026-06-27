@@ -222,6 +222,60 @@ int main(int argc, char** argv) {
   }
 
   {
+    std::cerr << "[unit] Windows ETW dynamic observation JSON\n";
+    binsight::DynamicObservations dynamic;
+    dynamic.present = true;
+    dynamic.platform = "windows";
+    dynamic.mode = "windows_etw";
+    dynamic.timeout_seconds = 90;
+    dynamic.exit_code = 0;
+    dynamic.network_mode = "observe";
+    dynamic.process_events.push_back({"process_start", 1234, 0, "C:/sample/app.exe", "\"app.exe\""});
+    dynamic.file_events.push_back({"C:/sample/drop.bin", "created_or_nearby_artifact", 7, "fnv1a64:abc"});
+    dynamic.network_events.push_back({"tcp", "127.0.0.1:443", "pid=1234 state=5"});
+    dynamic.warnings.push_back("windows_etw_risk_notice");
+    const auto json = binsight::to_json(dynamic);
+    std::string error;
+    const auto parsed = binsight::dynamic_observations_from_json(json, error);
+    check(parsed.has_value(), "Windows ETW dynamic observations JSON should parse");
+    check(parsed && parsed->platform == "windows", "Windows ETW observations should keep platform");
+    check(parsed && parsed->mode == "windows_etw", "Windows ETW observations should keep mode");
+    check(parsed && !parsed->network_events.empty() &&
+              parsed->network_events.front().destination == "127.0.0.1:443",
+          "Windows ETW observations should keep network events");
+  }
+
+#ifndef _WIN32
+  {
+    std::cerr << "[unit] Windows ETW unsupported on non-Windows\n";
+    const auto path = std::filesystem::current_path() / "binsight-windows-etw-test.bin";
+    {
+      std::ofstream out(path, std::ios::binary);
+      out << "test";
+    }
+    const auto dynamic_path = std::filesystem::current_path() / "binsight-windows-etw-test.json";
+    binsight::WindowsEtwObserveOptions options;
+    options.binary_path = path;
+    options.output_path = dynamic_path;
+    options.risk_accepted = true;
+    std::vector<std::string> warnings;
+    binsight::WindowsEtwObserver observer;
+    const auto observations = observer.observe(options, warnings);
+    check(observations.present, "unsupported Windows ETW observer should still write a dynamic report");
+    check(std::any_of(warnings.begin(), warnings.end(), [](const std::string& warning) {
+            return warning.find("only supported by the Windows build") != std::string::npos;
+          }),
+          "non-Windows Windows ETW observer should explain unsupported platform");
+    std::string error;
+    const auto parsed = binsight::read_dynamic_observations(dynamic_path, error);
+    check(parsed.has_value(), "unsupported Windows ETW dynamic report should be readable");
+    std::error_code remove_error;
+    std::filesystem::remove(path, remove_error);
+    std::filesystem::remove(dynamic_path, remove_error);
+  }
+#endif
+
+  {
     std::cerr << "[unit] packed rules\n";
     binsight::AnalysisReport report;
     report.target.format = binsight::BinaryFormat::ELF;

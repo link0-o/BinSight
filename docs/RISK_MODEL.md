@@ -50,3 +50,5 @@ When an online AI provider is enabled, BinSight keeps the local baseline and AI 
 - Strong local `malicious-likely` findings at `high` or `critical` severity set a high-risk floor.
 - Capability-only local findings can be downgraded by AI when the full context supports a lower risk.
 - AI can escalate the final severity when it identifies a higher-risk evidence combination missed by local rules.
+
+Runtime evidence from Linux Docker or Windows ETW expert observation can raise confidence when it records concrete process, file, or network behavior. Windows ETW observation is not a sandbox and does not prove containment.

@@ -3,6 +3,7 @@
 #include <binsight/process_runner.hpp>
 #include <binsight/types.hpp>
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -28,6 +29,22 @@ class LinuxDockerObserver {
 
  private:
   ProcessRunner runner_;
+};
+
+struct WindowsEtwObserveOptions {
+  std::filesystem::path binary_path;
+  std::filesystem::path output_path = "dynamic.json";
+  int timeout_seconds = 90;
+  std::uint64_t max_events = 5000;
+  std::uint64_t max_json_bytes = 10ull * 1024ull * 1024ull;
+  std::string network_mode = "observe";
+  bool risk_accepted = false;
+};
+
+class WindowsEtwObserver {
+ public:
+  DynamicObservations observe(const WindowsEtwObserveOptions& options,
+                              std::vector<std::string>& warnings) const;
 };
 
 std::string to_json(const DynamicObservations& observations);

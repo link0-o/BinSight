@@ -50,3 +50,5 @@ BinSight 把“观察到的证据”和“对风险的解释”分开处理。
 - 本地存在 `high` 或 `critical` 且 `malicious-likely`、`strong` 的强证据时，最终结论保留高风险下限。
 - 如果本地只有 capability 类型命中，AI 可在上下文支持时降低最终等级。
 - 如果 AI 发现本地规则未覆盖的更高风险组合，可以提升最终等级。
+
+Linux Docker 或 Windows ETW 专家动态观测提供的运行时证据，只有在记录到具体进程、文件或网络行为时才提高置信度。Windows ETW 专家动态观测不是沙箱，不能证明样本已被隔离。

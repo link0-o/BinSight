@@ -65,11 +65,22 @@ report.json
 
 根据[工业组件优先法则](DESIGN_PRINCIPLES.md)，LIEF 是生产级 PE/ELF parser。内置 parser 只在 LIEF 禁用或不可用时作为 **Temporary / Prototype / Educational Implementation** fallback 保留。
 
-## 加壳样本
+## 加壳样本和 ETW 专家动态观测
 
 Windows 版不会自动执行未知 `.exe`。对于加壳或强混淆 PE 样本，BinSight 只报告静态指标，例如高熵节区、导入项很少、可写可执行节区、动态导入解析等。如果出现这些指标，报告可能包含 `static_inconclusive`。
 
-高风险强壳样本建议使用专用虚拟机、专业沙箱，或导入 Sysmon/Windows Event Log 证据。`observe linux-docker` 只用于 Linux ELF 样本，不运行 Windows PE 文件。
+如果你明确要在 Windows 本机运行样本，可以使用专家 ETW 动态观测模式：
+
+```powershell
+.\bin\binsight.exe observe windows-etw .\sample.exe `
+  --out dynamic.json `
+  --i-understand-risk
+.\bin\binsight.exe scan .\sample.exe --dynamic-report dynamic.json
+```
+
+这个模式不是沙箱。它会在本机真实执行目标文件，并只保存受限大小的 JSON 摘要，不保存原始 `.etl` 日志。详见 [Windows ETW 专家动态观测](WINDOWS_ETW_OBSERVATION.md)。
+
+高风险强壳样本仍建议使用专用虚拟机、专业沙箱，或导入 Sysmon/Windows Event Log 证据。`observe linux-docker` 只用于 Linux ELF 样本，不运行 Windows PE 文件。
 
 ## 使用 DeepSeek
 

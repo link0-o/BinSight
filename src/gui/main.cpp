@@ -227,16 +227,20 @@ class MainWindow final : public QMainWindow {
 
     dynamic_accept_ = new QCheckBox("I understand Docker is not a malware-grade sandbox", mode_group_);
     dynamic_timeout_ = new QSpinBox(mode_group_);
-    dynamic_timeout_->setRange(5, 300);
+    dynamic_timeout_->setRange(5, 600);
+#ifdef _WIN32
+    dynamic_timeout_->setValue(90);
+    dynamic_image_ = new QLineEdit("Windows ETW native", mode_group_);
+#else
     dynamic_timeout_->setValue(30);
     dynamic_image_ = new QLineEdit("binsight-observer:latest", mode_group_);
+#endif
     dynamic_network_ = new QComboBox(mode_group_);
-    dynamic_network_->addItems({"none", "bridge"});
 #ifdef _WIN32
-    dynamic_accept_->setEnabled(false);
-    dynamic_timeout_->setEnabled(false);
+    dynamic_network_->addItems({"observe", "off"});
     dynamic_image_->setEnabled(false);
-    dynamic_network_->setEnabled(false);
+#else
+    dynamic_network_->addItems({"none", "bridge"});
 #endif
     docker_risk_label_ = add_form_row(mode_form, dynamic_accept_);
     docker_image_label_ = add_form_row(mode_form, dynamic_image_);
@@ -247,9 +251,6 @@ class MainWindow final : public QMainWindow {
     auto* actions = new QHBoxLayout();
     scan_button_ = new QPushButton(scan_page);
     dynamic_button_ = new QPushButton(scan_page);
-#ifdef _WIN32
-    dynamic_button_->setEnabled(false);
-#endif
     actions->addWidget(scan_button_);
     actions->addWidget(dynamic_button_);
     actions->addStretch(1);
@@ -358,12 +359,16 @@ class MainWindow final : public QMainWindow {
     if (name == "report_language") return zh ? "报告语言" : "Report language";
     if (name == "docker_risk") return zh ? "Docker 风险确认" : "Docker risk";
     if (name == "docker_accept") return zh ? "我理解 Docker 不是恶意软件级沙箱" : "I understand Docker is not a malware-grade sandbox";
+    if (name == "windows_etw_risk") return zh ? "Windows 专家风险确认" : "Windows expert risk";
+    if (name == "windows_etw_accept") return zh ? "我理解目标会在本机真实运行，BinSight 不是沙箱" : "I understand the target runs on this host and BinSight is not a sandbox";
     if (name == "docker_unavailable_windows") return zh ? "Windows 不支持 Linux Docker 动态观测" : "Linux Docker observation is not available on Windows";
     if (name == "docker_image") return zh ? "Docker 镜像" : "Docker image";
+    if (name == "windows_etw_backend") return zh ? "Windows 观测后端" : "Windows backend";
     if (name == "timeout_seconds") return zh ? "超时秒数" : "Timeout seconds";
     if (name == "network") return zh ? "网络" : "Network";
     if (name == "run_static") return zh ? "运行静态扫描" : "Run Static Scan";
     if (name == "run_dynamic") return zh ? "运行 Docker 动态观测 + 扫描" : "Run Docker Observation + Scan";
+    if (name == "run_windows_etw") return zh ? "运行 Windows ETW 专家观测 + 扫描" : "Run Windows ETW Expert Observation + Scan";
     if (name == "open_zh") return zh ? "打开中文报告" : "Open Chinese Report";
     if (name == "open_en") return zh ? "打开英文报告" : "Open English Report";
     if (name == "open_json") return zh ? "打开 JSON" : "Open JSON";
@@ -396,7 +401,9 @@ class MainWindow final : public QMainWindow {
     if (name == "choose_binary_first") return zh ? "请先选择一个二进制文件。" : "Choose a binary first.";
     if (name == "dynamic_title") return zh ? "动态观测" : "Dynamic observation";
     if (name == "confirm_docker") return zh ? "运行动态观测前必须确认 Docker 风险提示。" : "Confirm the Docker risk notice before running dynamic observation.";
+    if (name == "confirm_windows_etw") return zh ? "运行 Windows 专家观测前必须确认本机执行风险。" : "Confirm the local execution risk before running Windows expert observation.";
     if (name == "running_dynamic") return zh ? "正在运行 Docker 动态观测和扫描..." : "Running Docker observation and scan...";
+    if (name == "running_windows_etw") return zh ? "正在运行 Windows ETW 专家观测和扫描..." : "Running Windows ETW expert observation and scan...";
     if (name == "running_static") return zh ? "正在运行静态扫描..." : "Running static scan...";
     if (name == "open_title") return zh ? "打开" : "Open";
     if (name == "no_file") return zh ? "还没有可打开的文件。" : "No file is available yet.";
@@ -414,17 +421,20 @@ class MainWindow final : public QMainWindow {
     mode_group_->setTitle(tr_text("analysis"));
     ui_language_label_->setText(tr_text("ui_language"));
     report_language_label_->setText(tr_text("report_language"));
-    docker_risk_label_->setText(tr_text("docker_risk"));
 #ifdef _WIN32
-    dynamic_accept_->setText(tr_text("docker_unavailable_windows"));
+    docker_risk_label_->setText(tr_text("windows_etw_risk"));
+    dynamic_accept_->setText(tr_text("windows_etw_accept"));
+    docker_image_label_->setText(tr_text("windows_etw_backend"));
+    dynamic_button_->setText(tr_text("run_windows_etw"));
 #else
+    docker_risk_label_->setText(tr_text("docker_risk"));
     dynamic_accept_->setText(tr_text("docker_accept"));
-#endif
     docker_image_label_->setText(tr_text("docker_image"));
+    dynamic_button_->setText(tr_text("run_dynamic"));
+#endif
     timeout_label_->setText(tr_text("timeout_seconds"));
     network_label_->setText(tr_text("network"));
     scan_button_->setText(tr_text("run_static"));
-    dynamic_button_->setText(tr_text("run_dynamic"));
     open_zh_->setText(tr_text("open_zh"));
     open_en_->setText(tr_text("open_en"));
     open_json_->setText(tr_text("open_json"));
@@ -675,12 +685,23 @@ class MainWindow final : public QMainWindow {
       return;
     }
     if (with_dynamic && !dynamic_accept_->isChecked()) {
+#ifdef _WIN32
+      QMessageBox::warning(this, tr_text("dynamic_title"), tr_text("confirm_windows_etw"));
+#else
       QMessageBox::warning(this, tr_text("dynamic_title"), tr_text("confirm_docker"));
+#endif
       return;
     }
 
     set_running(true);
-    result_text_->setPlainText(with_dynamic ? tr_text("running_dynamic") : tr_text("running_static"));
+    result_text_->setPlainText(
+        with_dynamic
+#ifdef _WIN32
+            ? tr_text("running_windows_etw")
+#else
+            ? tr_text("running_dynamic")
+#endif
+            : tr_text("running_static"));
     auto options = scan_options();
     const auto exe_dir = path_from_qstring(app_dir());
     const auto docker_image = dynamic_image_->text().toStdString();
@@ -697,7 +718,18 @@ class MainWindow final : public QMainWindow {
         std::vector<std::string> warnings;
         if (with_dynamic) {
 #ifdef _WIN32
-          throw std::runtime_error("Linux Docker observation is not available on Windows.");
+          binsight::WindowsEtwObserveOptions observe;
+          observe.binary_path = options.binary_path;
+          observe.output_path = binsight::with_output_dir(options.output_dir, "dynamic.json");
+          observe.network_mode = docker_network;
+          observe.timeout_seconds = timeout;
+          observe.risk_accepted = true;
+          binsight::WindowsEtwObserver observer;
+          const auto dynamic = observer.observe(observe, warnings);
+          if (!dynamic.present) {
+            throw std::runtime_error("Windows ETW observation failed to start.");
+          }
+          options.dynamic_report_path = observe.output_path;
 #else
           binsight::DockerObserveOptions observe;
           observe.binary_path = options.binary_path;
@@ -764,9 +796,7 @@ class MainWindow final : public QMainWindow {
   void set_running(bool running) {
     scan_button_->setEnabled(!running);
     test_connection_->setEnabled(!running);
-#ifndef _WIN32
     dynamic_button_->setEnabled(!running);
-#endif
   }
 
   void open_file(const std::filesystem::path& path) {

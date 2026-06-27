@@ -2,6 +2,7 @@
 #include <binsight/utils.hpp>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdlib>
 #include <filesystem>
@@ -9,7 +10,20 @@
 #include <map>
 #include <optional>
 #include <regex>
+#include <set>
 #include <sstream>
+#include <thread>
+
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <winsock2.h>
+#include <windows.h>
+#include <iphlpapi.h>
+#include <tlhelp32.h>
+#include <ws2tcpip.h>
+#endif
 
 namespace binsight {
 
@@ -48,6 +62,184 @@ std::uint64_t directory_size(const std::filesystem::path& path) {
   }
   return total;
 }
+
+void append_warning_once(std::vector<std::string>& warnings, const std::string& warning) {
+  if (std::find(warnings.begin(), warnings.end(), warning) == warnings.end()) {
+    warnings.push_back(warning);
+  }
+}
+
+bool event_budget_exceeded(const DynamicObservations& observations,
+                           const WindowsEtwObserveOptions& options) {
+  const auto count = observations.process_events.size() + observations.file_events.size() +
+                     observations.network_events.size();
+  return count >= options.max_events || to_json(observations).size() >= options.max_json_bytes;
+}
+
+void append_process_event(DynamicObservations& observations,
+                          const WindowsEtwObserveOptions& options,
+                          std::vector<std::string>& warnings,
+                          DynamicProcessEvent event) {
+  if (event_budget_exceeded(observations, options)) {
+    append_warning_once(warnings, "windows_etw_event_limit_reached: event details were truncated");
+    return;
+  }
+  event.image = first_chars(event.image, 500);
+  event.command_line = first_chars(event.command_line, 1000);
+  observations.process_events.push_back(std::move(event));
+}
+
+void append_file_event(DynamicObservations& observations,
+                       const WindowsEtwObserveOptions& options,
+                       std::vector<std::string>& warnings,
+                       DynamicFileEvent event) {
+  if (event_budget_exceeded(observations, options)) {
+    append_warning_once(warnings, "windows_etw_event_limit_reached: event details were truncated");
+    return;
+  }
+  event.path = first_chars(event.path, 700);
+  observations.file_events.push_back(std::move(event));
+}
+
+void append_network_event(DynamicObservations& observations,
+                          const WindowsEtwObserveOptions& options,
+                          std::vector<std::string>& warnings,
+                          DynamicNetworkEvent event) {
+  if (event_budget_exceeded(observations, options)) {
+    append_warning_once(warnings, "windows_etw_event_limit_reached: event details were truncated");
+    return;
+  }
+  event.destination = first_chars(event.destination, 300);
+  event.detail = first_chars(event.detail, 700);
+  observations.network_events.push_back(std::move(event));
+}
+
+#if defined(_WIN32)
+std::string narrow_from_wide(const std::wstring& value) {
+  if (value.empty()) {
+    return {};
+  }
+  const int bytes = WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()),
+                                        nullptr, 0, nullptr, nullptr);
+  if (bytes <= 0) {
+    return {};
+  }
+  std::string out(static_cast<std::size_t>(bytes), '\0');
+  WideCharToMultiByte(CP_UTF8, 0, value.data(), static_cast<int>(value.size()), out.data(), bytes,
+                      nullptr, nullptr);
+  return out;
+}
+
+std::wstring quote_windows_path(const std::filesystem::path& path) {
+  std::wstring value = path.wstring();
+  std::wstring out = L"\"";
+  for (wchar_t c : value) {
+    if (c == L'"') {
+      out += L"\\\"";
+    } else {
+      out.push_back(c);
+    }
+  }
+  out.push_back(L'"');
+  return out;
+}
+
+std::map<std::filesystem::path, std::uint64_t> shallow_file_snapshot(
+    const std::filesystem::path& directory) {
+  std::map<std::filesystem::path, std::uint64_t> snapshot;
+  std::error_code ec;
+  if (!std::filesystem::exists(directory, ec)) {
+    return snapshot;
+  }
+  for (const auto& entry : std::filesystem::directory_iterator(directory, ec)) {
+    if (ec || !entry.is_regular_file(ec)) {
+      continue;
+    }
+    snapshot[entry.path()] = file_size_or_zero(entry.path());
+  }
+  return snapshot;
+}
+
+std::vector<DWORD> child_processes_of(const std::set<DWORD>& parent_pids) {
+  std::vector<DWORD> children;
+  HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+  if (snapshot == INVALID_HANDLE_VALUE) {
+    return children;
+  }
+  PROCESSENTRY32W entry{};
+  entry.dwSize = sizeof(entry);
+  if (Process32FirstW(snapshot, &entry)) {
+    do {
+      if (parent_pids.find(entry.th32ParentProcessID) != parent_pids.end()) {
+        children.push_back(entry.th32ProcessID);
+      }
+    } while (Process32NextW(snapshot, &entry));
+  }
+  CloseHandle(snapshot);
+  return children;
+}
+
+std::string process_image_path(DWORD pid) {
+  HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+  if (process == nullptr) {
+    return {};
+  }
+  std::wstring buffer(32768, L'\0');
+  DWORD size = static_cast<DWORD>(buffer.size());
+  std::string out;
+  if (QueryFullProcessImageNameW(process, 0, buffer.data(), &size) != 0) {
+    buffer.resize(size);
+    out = narrow_from_wide(buffer);
+  }
+  CloseHandle(process);
+  return out;
+}
+
+std::string ipv4_address(DWORD value) {
+  in_addr addr{};
+  addr.S_un.S_addr = value;
+  char buffer[INET_ADDRSTRLEN]{};
+  if (inet_ntop(AF_INET, &addr, buffer, sizeof(buffer)) == nullptr) {
+    return {};
+  }
+  return buffer;
+}
+
+void collect_tcp_connections(const std::set<DWORD>& pids,
+                             DynamicObservations& observations,
+                             const WindowsEtwObserveOptions& options,
+                             std::vector<std::string>& warnings,
+                             std::set<std::string>& seen) {
+  ULONG bytes = 0;
+  if (GetExtendedTcpTable(nullptr, &bytes, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) !=
+      ERROR_INSUFFICIENT_BUFFER) {
+    return;
+  }
+  std::vector<unsigned char> buffer(bytes);
+  auto* table = reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buffer.data());
+  if (GetExtendedTcpTable(table, &bytes, FALSE, AF_INET, TCP_TABLE_OWNER_PID_ALL, 0) != NO_ERROR) {
+    return;
+  }
+  for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+    const auto& row = table->table[i];
+    if (pids.find(row.dwOwningPid) == pids.end()) {
+      continue;
+    }
+    const std::string destination =
+        ipv4_address(row.dwRemoteAddr) + ":" + std::to_string(ntohs(static_cast<unsigned short>(row.dwRemotePort)));
+    const std::string key = std::to_string(row.dwOwningPid) + ":tcp:" + destination + ":" +
+                            std::to_string(row.dwState);
+    if (!seen.insert(key).second) {
+      continue;
+    }
+    DynamicNetworkEvent event;
+    event.operation = "tcp";
+    event.destination = destination;
+    event.detail = "pid=" + std::to_string(row.dwOwningPid) + " state=" + std::to_string(row.dwState);
+    append_network_event(observations, options, warnings, std::move(event));
+  }
+}
+#endif
 
 std::string json_unescape(std::string value) {
   std::string out;
@@ -413,6 +605,160 @@ DynamicObservations LinuxDockerObserver::observe(const DockerObserveOptions& opt
   if (remove_error) {
     warnings.push_back("failed to remove temporary dynamic observation directory: " +
                        remove_error.message());
+  }
+  observations.warnings = warnings;
+  write_dynamic_observations(options.output_path, observations);
+  return observations;
+#endif
+}
+
+DynamicObservations WindowsEtwObserver::observe(const WindowsEtwObserveOptions& options,
+                                                std::vector<std::string>& warnings) const {
+  DynamicObservations observations;
+  observations.present = true;
+  observations.platform = "windows";
+  observations.mode = "windows_etw";
+  observations.timeout_seconds = options.timeout_seconds;
+  observations.network_mode = options.network_mode;
+
+  if (!options.risk_accepted) {
+    warnings.push_back("windows_etw observation refused: missing --i-understand-risk");
+    observations.warnings = warnings;
+    write_dynamic_observations(options.output_path, observations);
+    return observations;
+  }
+  if (!std::filesystem::exists(options.binary_path)) {
+    warnings.push_back("windows_etw observation failed: binary does not exist");
+    observations.warnings = warnings;
+    write_dynamic_observations(options.output_path, observations);
+    return observations;
+  }
+  if (options.network_mode != "observe" && options.network_mode != "off") {
+    warnings.push_back("windows_etw observation failed: network mode must be observe or off");
+    observations.warnings = warnings;
+    write_dynamic_observations(options.output_path, observations);
+    return observations;
+  }
+
+#if !defined(_WIN32)
+  warnings.push_back("windows_etw observation is only supported by the Windows build");
+  observations.warnings = warnings;
+  write_dynamic_observations(options.output_path, observations);
+  return observations;
+#elif !defined(BINSIGHT_USE_ETW)
+  warnings.push_back("windows_etw observation is not enabled in this build");
+  observations.warnings = warnings;
+  write_dynamic_observations(options.output_path, observations);
+  return observations;
+#else
+  warnings.push_back(
+      "windows_etw_risk_notice: target was executed on the local Windows host; BinSight is not a sandbox");
+  warnings.push_back(
+      "windows_etw_storage_policy: raw ETL logs are not saved; only bounded JSON summaries are written");
+
+  const auto absolute_binary = std::filesystem::absolute(options.binary_path);
+  const auto watched_dir = absolute_binary.parent_path();
+  const auto before_files = shallow_file_snapshot(watched_dir);
+
+  STARTUPINFOW startup{};
+  startup.cb = sizeof(startup);
+  PROCESS_INFORMATION process{};
+  std::wstring command_line = quote_windows_path(absolute_binary);
+  const BOOL created = CreateProcessW(
+      nullptr,
+      command_line.data(),
+      nullptr,
+      nullptr,
+      FALSE,
+      CREATE_UNICODE_ENVIRONMENT,
+      nullptr,
+      watched_dir.empty() ? nullptr : watched_dir.wstring().c_str(),
+      &startup,
+      &process);
+  if (!created) {
+    warnings.push_back("windows_etw observation failed: CreateProcessW error " +
+                       std::to_string(GetLastError()));
+    observations.warnings = warnings;
+    write_dynamic_observations(options.output_path, observations);
+    return observations;
+  }
+
+  std::set<DWORD> observed_pids;
+  std::set<std::string> seen_network;
+  observed_pids.insert(process.dwProcessId);
+  append_process_event(observations, options, warnings,
+                       {"process_start",
+                        static_cast<int>(process.dwProcessId),
+                        0,
+                        narrow_from_wide(absolute_binary.wstring()),
+                        narrow_from_wide(command_line)});
+
+  const auto deadline = std::chrono::steady_clock::now() +
+                        std::chrono::seconds(std::max(1, options.timeout_seconds));
+  while (true) {
+    const DWORD wait_result = WaitForSingleObject(process.hProcess, 500);
+    for (DWORD child_pid : child_processes_of(observed_pids)) {
+      if (observed_pids.insert(child_pid).second) {
+        append_process_event(observations, options, warnings,
+                             {"process_start", static_cast<int>(child_pid),
+                              static_cast<int>(process.dwProcessId), process_image_path(child_pid), {}});
+      }
+    }
+    if (options.network_mode == "observe") {
+      collect_tcp_connections(observed_pids, observations, options, warnings, seen_network);
+    }
+    if (wait_result == WAIT_OBJECT_0) {
+      break;
+    }
+    if (std::chrono::steady_clock::now() >= deadline) {
+      observations.timed_out = true;
+      warnings.push_back("windows_etw observation timed out; target process was terminated");
+      TerminateProcess(process.hProcess, 124);
+      WaitForSingleObject(process.hProcess, 5000);
+      break;
+    }
+  }
+
+  DWORD exit_code = 0;
+  if (GetExitCodeProcess(process.hProcess, &exit_code)) {
+    observations.exit_code = static_cast<int>(exit_code);
+  }
+  append_process_event(observations, options, warnings,
+                       {"process_exit", static_cast<int>(process.dwProcessId), 0,
+                        narrow_from_wide(absolute_binary.wstring()),
+                        "exit_code=" + std::to_string(observations.exit_code)});
+
+  CloseHandle(process.hThread);
+  CloseHandle(process.hProcess);
+
+  const auto after_files = shallow_file_snapshot(watched_dir);
+  for (const auto& [path, size] : after_files) {
+    const auto before = before_files.find(path);
+    if (before == before_files.end()) {
+      append_file_event(observations, options, warnings,
+                        {narrow_from_wide(path.wstring()), "created_or_nearby_artifact", size,
+                         fnv1a64_file(path)});
+    } else if (before->second != size) {
+      append_file_event(observations, options, warnings,
+                        {narrow_from_wide(path.wstring()), "modified_nearby_file", size,
+                         fnv1a64_file(path)});
+    }
+  }
+  for (const auto& [path, size] : before_files) {
+    if (after_files.find(path) == after_files.end()) {
+      append_file_event(observations, options, warnings,
+                        {narrow_from_wide(path.wstring()), "deleted_nearby_file", size, {}});
+    }
+  }
+
+  observations.syscall_summary.push_back(
+      "process_events:" + std::to_string(observations.process_events.size()));
+  observations.syscall_summary.push_back(
+      "file_events:" + std::to_string(observations.file_events.size()));
+  observations.syscall_summary.push_back(
+      "network_events:" + std::to_string(observations.network_events.size()));
+  if (to_json(observations).size() >= options.max_json_bytes) {
+    append_warning_once(warnings, "windows_etw_json_limit_reached: JSON summary was truncated");
   }
   observations.warnings = warnings;
   write_dynamic_observations(options.output_path, observations);

@@ -10,7 +10,7 @@ Default scan output:
 
 Use `--report-lang zh-CN|en|both` to control Markdown output. JSON field names remain stable English identifiers and do not change with report language.
 Markdown reports are language-localized for human readers. In `both` mode, online AI assessment text is requested separately for Chinese and English Markdown when a provider is enabled. JSON keeps one stable primary assessment for automation.
-Chinese Markdown is written as UTF-8 with BOM for reliable Windows editor encoding detection. JSON remains UTF-8 without BOM.
+Windows builds write Chinese Markdown as UTF-8 with BOM for reliable Windows editor encoding detection. Linux and macOS Markdown remains UTF-8 without BOM. JSON remains UTF-8 without BOM.
 
 ## JSON Top Level
 
@@ -45,7 +45,7 @@ Chinese Markdown is written as UTF-8 with BOM for reliable Windows editor encodi
 - `local_analysis`: deterministic baseline built from local rules.
 - `ai_analysis`: independent model assessment when an online provider is enabled; with `provider=none`, it mirrors local analysis.
 - `final_assessment`: fused conclusion from local and AI assessments. Automation should use this as the primary report verdict.
-- `dynamic_observations`: optional Linux Docker or imported runtime observation evidence. Static scans leave `present` false.
+- `dynamic_observations`: optional Linux Docker, Windows ETW, or imported runtime observation evidence. Static scans leave `present` false.
 
 ## Assessment Fields
 
@@ -73,8 +73,8 @@ Consumers should avoid treating `capability` findings as confirmed malicious beh
 `dynamic_observations` uses stable English fields:
 
 - `present`: whether a dynamic report was attached.
-- `platform`: observed platform, initially `linux`.
-- `mode`: observation mode, initially `linux-docker`.
+- `platform`: observed platform, such as `linux` or `windows`.
+- `mode`: observation mode, such as `linux-docker` or `windows_etw`.
 - `timeout_seconds`, `timed_out`, `exit_code`, `network_mode`.
 - `process_events`, `file_events`, `network_events`, and `syscall_summary`.
 - `stdout`, `stderr`, and `warnings`.
