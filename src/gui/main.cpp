@@ -291,12 +291,17 @@ class MainWindow final : public QMainWindow {
     model_ = new QComboBox(config_group_);
     model_->setEditable(false);
     custom_model_ = new QLineEdit(config_group_);
+    llm_timeout_ = new QSpinBox(config_group_);
+    llm_timeout_->setRange(5, 600);
+    llm_timeout_->setValue(90);
+    llm_timeout_->setSuffix(" s");
     api_key_ = new QLineEdit(config_group_);
     api_key_->setEchoMode(QLineEdit::Password);
     provider_label_ = add_form_row(config_form, provider_);
     base_url_label_ = add_form_row(config_form, base_url_);
     model_label_ = add_form_row(config_form, model_);
     custom_model_label_ = add_form_row(config_form, custom_model_);
+    llm_timeout_label_ = add_form_row(config_form, llm_timeout_);
     api_key_label_ = add_form_row(config_form, api_key_);
     config_layout->addWidget(config_group_);
 
@@ -369,6 +374,7 @@ class MainWindow final : public QMainWindow {
     if (name == "model") return zh ? "模型" : "Model";
     if (name == "custom_model") return zh ? "自定义模型名" : "Custom model";
     if (name == "custom_model_placeholder") return zh ? "可选：输入后优先使用这个模型名" : "Optional: overrides the preset model";
+    if (name == "llm_timeout") return zh ? "AI 超时秒数" : "AI timeout seconds";
     if (name == "api_key") return zh ? "API key" : "API key";
     if (name == "api_key_placeholder") return zh ? "仅在安全凭据库可用时保存" : "Only saved to secure credential storage when available";
     if (name == "save_config") return zh ? "保存配置" : "Save Config";
@@ -385,7 +391,7 @@ class MainWindow final : public QMainWindow {
     if (name == "secure_unavailable") return zh ? "当前构建无法使用安全凭据库。请改用环境变量。" : "Secure credential storage is unavailable in this build. Use an environment variable instead.";
     if (name == "api_key_saved") return zh ? "API key 已保存到系统安全凭据库。" : "API key was saved to secure credential storage.";
     if (name == "test_title") return zh ? "模型联通测试" : "Model connection test";
-    if (name == "testing_model") return zh ? "正在测试模型联通..." : "Testing model connection...";
+    if (name == "testing_model") return zh ? "正在测试模型联通，慢模型可能需要几十秒..." : "Testing model connection; slow models may take tens of seconds...";
     if (name == "scan_title") return zh ? "扫描" : "Scan";
     if (name == "choose_binary_first") return zh ? "请先选择一个二进制文件。" : "Choose a binary first.";
     if (name == "dynamic_title") return zh ? "动态观测" : "Dynamic observation";
@@ -429,6 +435,7 @@ class MainWindow final : public QMainWindow {
     model_label_->setText(tr_text("model"));
     custom_model_label_->setText(tr_text("custom_model"));
     custom_model_->setPlaceholderText(tr_text("custom_model_placeholder"));
+    llm_timeout_label_->setText(tr_text("llm_timeout"));
     api_key_label_->setText(tr_text("api_key"));
     api_key_->setPlaceholderText(tr_text("api_key_placeholder"));
     save_config_->setText(tr_text("save_config"));
@@ -523,6 +530,7 @@ class MainWindow final : public QMainWindow {
     options.api_key_env = default_key_env(provider_->currentText());
     options.api_key_name = default_key_name(provider_->currentText());
     options.api_key_override = api_key_->text().toStdString();
+    options.llm_timeout_seconds = llm_timeout_->value();
     return options;
   }
 
@@ -536,6 +544,7 @@ class MainWindow final : public QMainWindow {
     output_dir_->setText(qstring_from_path(config->output_dir.empty() ? path_from_qstring(default_output_dir())
                                                                       : config->output_dir));
     report_language_->setCurrentText(QString::fromStdString(binsight::to_string(config->report_language)));
+    llm_timeout_->setValue(config->llm_timeout_seconds);
     if (config->provider == "ollama") {
       provider_->setCurrentText("Ollama");
     } else if (config->api_key_name == "binsight:deepseek" && config->provider == "anthropic") {
@@ -589,6 +598,7 @@ class MainWindow final : public QMainWindow {
     config.api_key_name = default_key_name(provider_->currentText());
     config.report_language = selected_language();
     config.output_dir = path_from_qstring(output_dir_->text());
+    config.llm_timeout_seconds = llm_timeout_->value();
     return config;
   }
 
@@ -638,6 +648,7 @@ class MainWindow final : public QMainWindow {
       out << (use_chinese ? "Provider: " : "Provider: ") << options.provider << "\n";
       out << (use_chinese ? "Base URL: " : "Base URL: ") << options.base_url << "\n";
       out << (use_chinese ? "模型: " : "Model: ") << options.model << "\n";
+      out << (use_chinese ? "超时秒数: " : "Timeout seconds: ") << options.llm_timeout_seconds << "\n";
       out << (use_chinese ? "结果: " : "Result: ") << (result.ok ? "ok" : "failed") << "\n";
       out << result.message << "\n";
       for (const auto& warning : warnings) {
@@ -803,6 +814,8 @@ class MainWindow final : public QMainWindow {
   QLabel* model_label_ = nullptr;
   QLineEdit* custom_model_ = nullptr;
   QLabel* custom_model_label_ = nullptr;
+  QSpinBox* llm_timeout_ = nullptr;
+  QLabel* llm_timeout_label_ = nullptr;
   QLineEdit* api_key_ = nullptr;
   QLabel* api_key_label_ = nullptr;
   QPushButton* save_config_ = nullptr;

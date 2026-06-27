@@ -53,6 +53,19 @@ std::string json_field(const std::string& content, const std::string& name) {
   return out;
 }
 
+int json_int_field(const std::string& content, const std::string& name, int fallback) {
+  const std::regex field("\\\"" + name + "\\\"\\s*:\\s*(-?\\d+)");
+  std::smatch match;
+  if (!std::regex_search(content, match, field)) {
+    return fallback;
+  }
+  try {
+    return std::stoi(match[1].str());
+  } catch (...) {
+    return fallback;
+  }
+}
+
 std::filesystem::path user_config_home() {
 #ifdef _WIN32
   const char* appdata = std::getenv("APPDATA");
@@ -97,6 +110,8 @@ std::optional<AppConfig> ConfigManager::load(std::vector<std::string>& warnings)
     if (!language.empty()) config.report_language = report_language_from_string(language);
     const std::string output_dir = json_field(content, "output_dir");
     if (!output_dir.empty()) config.output_dir = output_dir;
+    config.llm_timeout_seconds = json_int_field(content, "llm_timeout_seconds",
+                                                config.llm_timeout_seconds);
     return config;
   } catch (const std::exception& ex) {
     warnings.push_back(std::string("failed to read config: ") + ex.what());
@@ -113,7 +128,8 @@ void ConfigManager::save(const AppConfig& config) const {
   out << "  \"api_key_env\": \"" << json_escape(config.api_key_env) << "\",\n";
   out << "  \"api_key_name\": \"" << json_escape(config.api_key_name) << "\",\n";
   out << "  \"report_language\": \"" << json_escape(to_string(config.report_language)) << "\",\n";
-  out << "  \"output_dir\": \"" << json_escape(config.output_dir.string()) << "\"\n";
+  out << "  \"output_dir\": \"" << json_escape(config.output_dir.string()) << "\",\n";
+  out << "  \"llm_timeout_seconds\": " << config.llm_timeout_seconds << "\n";
   out << "}\n";
   write_file(config_path(), out.str());
 }

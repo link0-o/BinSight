@@ -18,6 +18,36 @@ void markdown_list(std::ostringstream& out, const std::vector<std::string>& valu
   }
 }
 
+bool has_ai_content(const AiAnalysis& analysis) {
+  return !analysis.summary.empty() || !analysis.decision_basis.empty() ||
+         !analysis.risk_sources.empty() || !analysis.recommendations.empty();
+}
+
+bool has_final_content(const FinalAssessment& assessment) {
+  return !assessment.summary.empty() || !assessment.decision_basis.empty() ||
+         !assessment.risk_sources.empty() || !assessment.recommendations.empty();
+}
+
+const AiAnalysis& ai_for_language(const AnalysisReport& report, ReportLanguage language) {
+  if (language == ReportLanguage::Chinese && has_ai_content(report.ai_analysis_chinese)) {
+    return report.ai_analysis_chinese;
+  }
+  if (language == ReportLanguage::English && has_ai_content(report.ai_analysis_english)) {
+    return report.ai_analysis_english;
+  }
+  return report.ai_analysis;
+}
+
+const FinalAssessment& final_for_language(const AnalysisReport& report, ReportLanguage language) {
+  if (language == ReportLanguage::Chinese && has_final_content(report.final_assessment_chinese)) {
+    return report.final_assessment_chinese;
+  }
+  if (language == ReportLanguage::English && has_final_content(report.final_assessment_english)) {
+    return report.final_assessment_english;
+  }
+  return report.final_assessment;
+}
+
 void write_target_en(std::ostringstream& out, const AnalysisReport& report) {
   out << "## Target\n\n";
   out << "- Analysis mode: " << to_string(report.analysis_mode) << "\n";
@@ -63,6 +93,19 @@ std::string zh_known_text(const std::string& value) {
   if (value == "Sparse imports in executable") return "可执行文件导入项很少";
   if (value == "Dynamic import resolution capability") return "动态导入解析能力";
   if (value == "Writable executable section") return "可写可执行节区";
+  if (value == "Local and AI assessments agree on severity.") return "本地规则与 AI 评估风险等级一致。";
+  if (value == "AI escalation: AI assessment identified higher combined risk than the local rule baseline.") {
+    return "AI 升级：AI 评估认为组合风险高于本地规则基线。";
+  }
+  if (value == "AI downgrade: local findings are capability-only and AI judged the combined evidence lower risk.") {
+    return "AI 降级：本地发现仅为能力提示，AI 认为组合证据风险更低。";
+  }
+  if (value == "Local baseline remains higher because findings include suspicious or stronger deterministic evidence.") {
+    return "本地基线保持较高等级，因为规则发现包含可疑或更强的确定性证据。";
+  }
+  if (value == "Local strong malicious-likely evidence sets a high-risk floor; AI assessment was lower and kept as context.") {
+    return "本地存在强高风险倾向证据，因此最低风险等级保持为高；较低的 AI 评估仅作为上下文。";
+  }
   if (value == "The binary imports APIs that can launch commands or child processes. This is a capability signal, not proof of malicious behavior.") {
     return "该文件导入了可启动命令或子进程的 API。这是能力信号，不等于恶意行为证据。";
   }
@@ -96,11 +139,17 @@ std::string zh_known_text(const std::string& value) {
   if (value == "The binary can resolve APIs or libraries dynamically at runtime.") {
     return "该文件可以在运行时动态解析 API 或库。";
   }
+  if (value == "A section appears both writable and executable, which can support unpacking or runtime code modification.") {
+    return "某个节区同时可写且可执行，这可能支持脱壳或运行时代码修改。";
+  }
   if (value == "Treat static conclusions as incomplete and consider controlled dynamic observation for Linux samples or a dedicated sandbox for high-risk samples.") {
     return "应将静态结论视为不完整；Linux 样本可考虑受控动态观测，高风险样本应使用专用沙箱。";
   }
   if (value == "Verify whether the packing is expected. Strong packers can hide imports and strings from static analysis.") {
     return "确认加壳是否符合预期。强壳可能隐藏导入项和字符串，使静态分析证据不完整。";
+  }
+  if (value == "Verify whether the section is expected and whether platform hardening is enabled.") {
+    return "确认该节区权限是否符合预期，并检查平台加固是否启用。";
   }
   if (value == "Combine this weak signal with entropy, section flags, dynamic API resolution, or runtime observations before drawing conclusions.") {
     return "这是弱信号，应结合熵、节区权限、动态 API 解析或运行时观测后再判断。";
@@ -122,6 +171,12 @@ std::string zh_known_text(const std::string& value) {
   }
   if (value == "Verify destinations, protocol use, and whether network behavior is expected.") {
     return "确认目标地址、协议使用方式，以及联网行为是否符合预期。";
+  }
+  if (value == "Verify whether network behavior is expected.") {
+    return "确认联网行为是否符合程序预期。";
+  }
+  if (value == "Review destinations.") {
+    return "审查网络目标地址。";
   }
   if (value == "Confirm whether matching strings are user-facing text, documentation, or actual anti-analysis logic.") {
     return "确认匹配字符串是用户可见文本、文档内容，还是实际反分析逻辑。";
@@ -146,7 +201,24 @@ std::string zh_risk_source(const std::string& value) {
   if (pos == std::string::npos) {
     return zh_known_text(value);
   }
-  return value.substr(0, pos + 2) + zh_known_text(value.substr(pos + 2));
+  const std::string id = value.substr(0, pos);
+  std::string rest = value.substr(pos + 2);
+  const auto bracket = rest.find(" [");
+  if (bracket != std::string::npos && !rest.empty() && rest.back() == ']') {
+    const auto title = rest.substr(0, bracket);
+    const auto meta = rest.substr(bracket + 2, rest.size() - bracket - 3);
+    std::vector<std::string> fields;
+    std::string field;
+    std::istringstream in(meta);
+    while (std::getline(in, field, ',')) {
+      fields.push_back(trim(field));
+    }
+    if (fields.size() == 3) {
+      return id + "：" + zh_known_text(title) + "（" + zh_known_text(fields[0]) + "，" +
+             zh_known_text(fields[1]) + "置信度，" + zh_known_text(fields[2]) + "证据）";
+    }
+  }
+  return id + "：" + zh_known_text(rest);
 }
 
 std::string zh_analysis_summary(const std::string& value) {
@@ -164,13 +236,37 @@ std::string zh_analysis_summary(const std::string& value) {
       if (!severity.empty() && severity.back() == '.') {
         severity.pop_back();
       }
-      return "确定性规则命中 " + count + " 个风险项。本地最高风险等级：" + severity + "。";
+      return "确定性规则命中 " + count + " 个风险项。本地最高风险等级：" +
+             zh_known_text(severity) + "。";
     }
   }
   const std::string final_prefix = "Final severity ";
   const std::string combines = " combines local baseline (";
   if (value.rfind(final_prefix, 0) == 0) {
-    return value;
+    const auto combines_pos = value.find(combines, final_prefix.size());
+    const std::string and_ai = ") and AI assessment (";
+    const std::string suffix = ").";
+    if (combines_pos != std::string::npos) {
+      const auto severity = value.substr(final_prefix.size(), combines_pos - final_prefix.size());
+      const auto local_start = combines_pos + combines.size();
+      const auto ai_pos = value.find(and_ai, local_start);
+      if (ai_pos != std::string::npos) {
+        const auto local = value.substr(local_start, ai_pos - local_start);
+        const auto ai_start = ai_pos + and_ai.size();
+        const auto end = value.find(suffix, ai_start);
+        if (end != std::string::npos) {
+          const auto ai = value.substr(ai_start, end - ai_start);
+          std::string result = "最终风险等级为" + zh_known_text(severity) + "。本地基线为" +
+                               zh_known_text(local) + "，AI 评估为" + zh_known_text(ai) + "。";
+          const std::string ai_summary = " AI summary: ";
+          const auto summary_pos = value.find(ai_summary, end + suffix.size());
+          if (summary_pos != std::string::npos) {
+            result += "AI 摘要：" + value.substr(summary_pos + ai_summary.size());
+          }
+          return result;
+        }
+      }
+    }
   }
   return value;
 }
@@ -357,34 +453,36 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
                                   const AnalysisReport& report,
                                   ReportLanguage language) const {
   const bool zh = language == ReportLanguage::Chinese;
+  const auto& ai_analysis = ai_for_language(report, language);
+  const auto& final_assessment = final_for_language(report, language);
   std::ostringstream out;
   out << (zh ? "# BinSight 风险报告\n\n" : "# BinSight Risk Report\n\n");
 
   if (zh) {
     write_target_zh(out, report);
     out << "## 最终评估\n\n";
-    out << "- 风险等级：" << to_string(report.final_assessment.severity) << "\n";
-    out << "- 融合依据：" << zh_known_text(report.final_assessment.decision_basis) << "\n\n";
-    out << zh_analysis_summary(report.final_assessment.summary) << "\n\n";
+    out << "- 风险等级：" << zh_known_text(to_string(final_assessment.severity)) << "\n";
+    out << "- 融合依据：" << zh_known_text(final_assessment.decision_basis) << "\n\n";
+    out << zh_analysis_summary(final_assessment.summary) << "\n\n";
     out << "### 风险来源\n\n";
-    if (report.final_assessment.risk_sources.empty()) {
+    if (final_assessment.risk_sources.empty()) {
       out << "- 无\n";
     } else {
-      for (const auto& source : report.final_assessment.risk_sources) {
+      for (const auto& source : final_assessment.risk_sources) {
         out << "- " << zh_risk_source(source) << '\n';
       }
     }
     out << "\n### 建议\n\n";
-    if (report.final_assessment.recommendations.empty()) {
+    if (final_assessment.recommendations.empty()) {
       out << "- 无\n";
     } else {
-      for (const auto& recommendation : report.final_assessment.recommendations) {
+      for (const auto& recommendation : final_assessment.recommendations) {
         out << "- " << zh_known_text(recommendation) << '\n';
       }
     }
 
     out << "\n## 本地规则评估\n\n";
-    out << "- 风险等级：" << to_string(report.local_analysis.severity) << "\n\n";
+    out << "- 风险等级：" << zh_known_text(to_string(report.local_analysis.severity)) << "\n\n";
     out << zh_analysis_summary(report.local_analysis.summary) << "\n\n";
     out << "### 本地风险来源\n\n";
     if (report.local_analysis.risk_sources.empty()) {
@@ -404,25 +502,25 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
     }
 
     out << "\n## AI 评估\n\n";
-    out << "- 提供方：" << report.ai_analysis.provider << "\n";
-    out << "- 模型：" << (report.ai_analysis.model.empty() ? "无" : report.ai_analysis.model) << "\n";
-    out << "- 风险等级：" << to_string(report.ai_analysis.severity) << "\n";
-    out << "- 置信度：" << zh_known_text(report.ai_analysis.confidence) << "\n";
-    out << "- 判断依据：" << zh_known_text(report.ai_analysis.decision_basis) << "\n\n";
-    out << zh_analysis_summary(report.ai_analysis.summary) << "\n\n";
+    out << "- 提供方：" << ai_analysis.provider << "\n";
+    out << "- 模型：" << (ai_analysis.model.empty() ? "无" : ai_analysis.model) << "\n";
+    out << "- 风险等级：" << zh_known_text(to_string(ai_analysis.severity)) << "\n";
+    out << "- 置信度：" << zh_known_text(ai_analysis.confidence) << "\n";
+    out << "- 判断依据：" << zh_known_text(ai_analysis.decision_basis) << "\n\n";
+    out << zh_analysis_summary(ai_analysis.summary) << "\n\n";
     out << "### AI 风险来源\n\n";
-    if (report.ai_analysis.risk_sources.empty()) {
+    if (ai_analysis.risk_sources.empty()) {
       out << "- 无\n";
     } else {
-      for (const auto& source : report.ai_analysis.risk_sources) {
+      for (const auto& source : ai_analysis.risk_sources) {
         out << "- " << zh_risk_source(source) << '\n';
       }
     }
     out << "\n### AI 建议\n\n";
-    if (report.ai_analysis.recommendations.empty()) {
+    if (ai_analysis.recommendations.empty()) {
       out << "- 无\n";
     } else {
-      for (const auto& recommendation : report.ai_analysis.recommendations) {
+      for (const auto& recommendation : ai_analysis.recommendations) {
         out << "- " << zh_known_text(recommendation) << '\n';
       }
     }
@@ -433,7 +531,7 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
     } else {
       for (const auto& finding : report.rule_findings) {
         out << "### " << finding.id << ": " << zh_known_text(finding.title) << "\n\n";
-        out << "- 风险等级：" << to_string(finding.severity) << "\n";
+        out << "- 风险等级：" << zh_known_text(to_string(finding.severity)) << "\n";
         out << "- 风险类型：" << zh_known_text(finding.risk_type) << "\n";
         out << "- 置信度：" << zh_known_text(finding.confidence) << "\n";
         out << "- 证据强度：" << zh_known_text(finding.evidence_strength) << "\n";
@@ -450,17 +548,23 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
     write_dynamic_zh(out, report);
     write_rag_zh(out, report);
     out << "## 警告\n\n";
-    markdown_list(out, report.warnings, "无");
+    if (report.warnings.empty()) {
+      out << "- 无\n";
+    } else {
+      for (const auto& warning : report.warnings) {
+        out << "- " << zh_known_text(warning) << '\n';
+      }
+    }
   } else {
     write_target_en(out, report);
     out << "## Final Assessment\n\n";
-    out << "- Severity: " << to_string(report.final_assessment.severity) << "\n";
-    out << "- Decision basis: " << report.final_assessment.decision_basis << "\n\n";
-    out << report.final_assessment.summary << "\n\n";
+    out << "- Severity: " << to_string(final_assessment.severity) << "\n";
+    out << "- Decision basis: " << final_assessment.decision_basis << "\n\n";
+    out << final_assessment.summary << "\n\n";
     out << "### Risk Sources\n\n";
-    markdown_list(out, report.final_assessment.risk_sources, "None");
+    markdown_list(out, final_assessment.risk_sources, "None");
     out << "\n### Recommendations\n\n";
-    markdown_list(out, report.final_assessment.recommendations, "None");
+    markdown_list(out, final_assessment.recommendations, "None");
 
     out << "\n## Local Rule Assessment\n\n";
     out << "- Severity: " << to_string(report.local_analysis.severity) << "\n\n";
@@ -471,16 +575,16 @@ void ReportWriter::write_markdown(const std::filesystem::path& path,
     markdown_list(out, report.local_analysis.recommendations, "None");
 
     out << "\n## AI Assessment\n\n";
-    out << "- Provider: " << report.ai_analysis.provider << "\n";
-    out << "- Model: " << (report.ai_analysis.model.empty() ? "(none)" : report.ai_analysis.model) << "\n";
-    out << "- Severity: " << to_string(report.ai_analysis.severity) << "\n";
-    out << "- Confidence: " << report.ai_analysis.confidence << "\n";
-    out << "- Decision basis: " << report.ai_analysis.decision_basis << "\n\n";
-    out << report.ai_analysis.summary << "\n\n";
+    out << "- Provider: " << ai_analysis.provider << "\n";
+    out << "- Model: " << (ai_analysis.model.empty() ? "(none)" : ai_analysis.model) << "\n";
+    out << "- Severity: " << to_string(ai_analysis.severity) << "\n";
+    out << "- Confidence: " << ai_analysis.confidence << "\n";
+    out << "- Decision basis: " << ai_analysis.decision_basis << "\n\n";
+    out << ai_analysis.summary << "\n\n";
     out << "### AI Risk Sources\n\n";
-    markdown_list(out, report.ai_analysis.risk_sources, "None");
+    markdown_list(out, ai_analysis.risk_sources, "None");
     out << "\n### AI Recommendations\n\n";
-    markdown_list(out, report.ai_analysis.recommendations, "None");
+    markdown_list(out, ai_analysis.recommendations, "None");
 
     out << "\n## Rule Findings\n\n";
     if (report.rule_findings.empty()) {

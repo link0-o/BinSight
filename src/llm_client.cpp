@@ -24,6 +24,8 @@ struct LlmHttpRequest {
   std::vector<std::string> headers = {"Content-Type: application/json"};
 };
 
+constexpr int kDefaultLlmRequestTimeoutSeconds = 90;
+
 Severity max_severity(const std::vector<RuleFinding>& findings) {
   Severity result = Severity::Info;
   for (const auto& finding : findings) {
@@ -39,6 +41,19 @@ std::string first_chars(const std::string& value, std::size_t count) {
     return value;
   }
   return value.substr(0, count) + "...";
+}
+
+int normalized_llm_timeout_seconds(const ScanOptions& options) {
+  if (options.llm_timeout_seconds == 0) {
+    return kDefaultLlmRequestTimeoutSeconds;
+  }
+  if (options.llm_timeout_seconds < 5) {
+    return 5;
+  }
+  if (options.llm_timeout_seconds > 600) {
+    return 600;
+  }
+  return options.llm_timeout_seconds;
 }
 
 std::string json_unescape_string(const std::string& value) {
@@ -194,6 +209,99 @@ std::string extract_model_text(const std::string& provider, const std::string& r
   return {};
 }
 
+std::size_t count_cjk_text(const std::string& text) {
+  std::size_t count = 0;
+  for (std::size_t i = 0; i + 2 < text.size(); ++i) {
+    const auto b0 = static_cast<unsigned char>(text[i]);
+    const auto b1 = static_cast<unsigned char>(text[i + 1]);
+    const auto b2 = static_cast<unsigned char>(text[i + 2]);
+    if (b0 >= 0xE4 && b0 <= 0xE9 && b1 >= 0x80 && b1 <= 0xBF && b2 >= 0x80 && b2 <= 0xBF) {
+      ++count;
+      i += 2;
+    }
+  }
+  return count;
+}
+
+std::size_t count_ascii_letters(const std::string& text) {
+  std::size_t count = 0;
+  for (const unsigned char c : text) {
+    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+      ++count;
+    }
+  }
+  return count;
+}
+
+std::string narrative_text(const AiAnalysis& analysis) {
+  std::string text = analysis.summary + "\n" + analysis.decision_basis + "\n";
+  for (const auto& item : analysis.risk_sources) {
+    text += item + "\n";
+  }
+  for (const auto& item : analysis.recommendations) {
+    text += item + "\n";
+  }
+  return text;
+}
+
+bool language_mismatch(ReportLanguage language, const AiAnalysis& analysis) {
+  const auto text = narrative_text(analysis);
+  if (text.empty()) {
+    return true;
+  }
+  if (language == ReportLanguage::Chinese) {
+    const auto cjk = count_cjk_text(text);
+    const auto latin = count_ascii_letters(text);
+    return cjk < 4 && latin > 40;
+  }
+  if (language == ReportLanguage::English) {
+    const auto cjk = count_cjk_text(text);
+    const auto latin = count_ascii_letters(text);
+    return cjk >= 8 && cjk * 2 > latin;
+  }
+  return false;
+}
+
+bool parse_ai_json_object(const ScanOptions& options,
+                          const RiskAssessment& local,
+                          const std::string& model_text,
+                          const std::string& raw_response,
+                          AiAnalysis& analysis,
+                          std::string& error) {
+  analysis = {};
+  analysis.provider = options.provider;
+  analysis.model = options.model;
+  analysis.raw_response = raw_response;
+  const auto object_text = extract_json_object_text(model_text);
+  if (!object_text) {
+    error = "AI assessment did not contain a JSON object";
+    return false;
+  }
+
+  try {
+    const auto parsed = json::parse(*object_text);
+    if (!parsed.is_object()) {
+      error = "AI assessment JSON root is not an object";
+      return false;
+    }
+    analysis.severity = severity_from_string(string_from_json(parsed.value("severity", json::object()), "info"));
+    analysis.confidence = string_from_json(parsed.value("confidence", json::object()), "low");
+    analysis.summary = string_from_json(parsed.value("summary", json::object()));
+    analysis.decision_basis = string_from_json(parsed.value("decision_basis", json::object()));
+    analysis.risk_sources = string_array_from_json(parsed.value("risk_sources", json::array()));
+    analysis.recommendations = string_array_from_json(parsed.value("recommendations", json::array()));
+    if (analysis.summary.empty()) {
+      error = "AI assessment JSON missed summary";
+      return false;
+    }
+    (void)local;
+    return true;
+  } catch (const std::exception& ex) {
+    error = std::string("failed to parse AI assessment JSON: ") + ex.what();
+    return false;
+  }
+}
+
 bool has_strong_high_local_evidence(const AnalysisReport& report) {
   for (const auto& finding : report.rule_findings) {
     if ((finding.severity == Severity::High || finding.severity == Severity::Critical) &&
@@ -327,6 +435,66 @@ std::optional<LlmHttpRequest> build_request(const ScanOptions& options,
   return request;
 }
 
+ToolResult execute_llm_request(const LlmHttpRequest& request,
+                               const ProcessRunner& runner,
+                               const std::string& temp_prefix,
+                               int timeout_seconds) {
+  const auto temp_path = std::filesystem::temp_directory_path() /
+                         (temp_prefix + "-request-" + std::to_string(std::rand()) + ".json");
+  const auto curl_config_path = std::filesystem::temp_directory_path() /
+                                (temp_prefix + "-curl-" + std::to_string(std::rand()) + ".txt");
+  write_file(temp_path, request.body);
+  std::ostringstream curl_config;
+  curl_config << "request = \"POST\"\n";
+  curl_config << "url = \"" << request.url << "\"\n";
+  for (const auto& header : request.headers) {
+    curl_config << "header = \"" << header << "\"\n";
+  }
+  curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
+  write_file(curl_config_path, curl_config.str());
+
+  std::vector<std::string> args = {"curl", "-sS", "--fail-with-body", "--max-time",
+                                   std::to_string(timeout_seconds),
+                                   "--config", curl_config_path.string()};
+  ToolResult response = runner.run(args, timeout_seconds);
+  std::filesystem::remove(temp_path);
+  std::filesystem::remove(curl_config_path);
+  return response;
+}
+
+std::string language_name(ReportLanguage language) {
+  return language == ReportLanguage::Chinese ? "Simplified Chinese" : "English";
+}
+
+std::string repair_system_prompt(ReportLanguage language) {
+  if (language == ReportLanguage::Chinese) {
+    return "你是 JSON 修复器。只能返回严格 JSON，不要 Markdown。字段名保持英文，所有叙述字段必须使用简体中文。技术标识如 API、DLL、section、规则 ID 可以保留原文。";
+  }
+  return "You are a JSON repair tool. Return strict JSON only, with no Markdown. Keep field names in English and write all narrative fields in English. Technical identifiers such as APIs, DLLs, sections, and rule IDs may remain unchanged.";
+}
+
+std::string build_repair_prompt(ReportLanguage language,
+                                const std::string& model_text,
+                                const std::string& error) {
+  std::ostringstream prompt;
+  if (language == ReportLanguage::Chinese) {
+    prompt << "请修正下面的模型输出，使其成为一个 JSON 对象。字段必须是："
+           << "{\"severity\":\"info|low|medium|high|critical\",\"confidence\":\"low|medium|high\","
+           << "\"summary\":\"...\",\"decision_basis\":\"...\",\"risk_sources\":[\"...\"],"
+           << "\"recommendations\":[\"...\"]}。"
+           << "summary、decision_basis、risk_sources、recommendations 的叙述内容必须使用简体中文。"
+           << "错误原因：" << error << "\n\n原始输出：\n" << model_text;
+  } else {
+    prompt << "Repair the following model output into one JSON object with exactly these fields: "
+           << "{\"severity\":\"info|low|medium|high|critical\",\"confidence\":\"low|medium|high\","
+           << "\"summary\":\"...\",\"decision_basis\":\"...\",\"risk_sources\":[\"...\"],"
+           << "\"recommendations\":[\"...\"]}. "
+           << "The narrative content in summary, decision_basis, risk_sources, and recommendations must be English. "
+           << "Error: " << error << "\n\nOriginal output:\n" << model_text;
+  }
+  return first_chars(prompt.str(), 16000);
+}
+
 }  // namespace
 
 LlmClient::LlmClient(ProcessRunner runner) : runner_(std::move(runner)) {}
@@ -357,48 +525,100 @@ RiskAssessment LlmClient::local_analysis(const ScanOptions&, const AnalysisRepor
 AiAnalysis LlmClient::analyze(const ScanOptions& options,
                               const AnalysisReport& report,
                               std::vector<std::string>& warnings) const {
+  return analyze_for_language(options, report, options.report_language == ReportLanguage::Both
+                                                   ? ReportLanguage::Chinese
+                                                   : options.report_language,
+                              warnings);
+}
+
+AiAnalysis LlmClient::analyze_for_language(const ScanOptions& options,
+                                           const AnalysisReport& report,
+                                           ReportLanguage language,
+                                           std::vector<std::string>& warnings) const {
+  ScanOptions language_options = options;
+  language_options.report_language = language;
   const auto local = report.local_analysis.summary.empty() ? local_analysis(options, report) : report.local_analysis;
-  if (options.provider == "none") {
-    return offline_analysis(options, local);
+  if (language_options.provider == "none") {
+    return offline_analysis(language_options, local);
   }
 
-  const std::string prompt = build_prompt(options, report);
-  const auto request = build_request(options, system_prompt(options), prompt, warnings);
+  const std::string prompt = build_prompt(language_options, report);
+  const auto request = build_request(language_options, system_prompt(language_options), prompt, warnings);
   if (!request) {
-    return offline_analysis(options, local);
+    return offline_analysis(language_options, local);
   }
 
-  const auto temp_path = std::filesystem::temp_directory_path() /
-                         ("binsight-llm-request-" + std::to_string(std::rand()) + ".json");
-  const auto curl_config_path = std::filesystem::temp_directory_path() /
-                                ("binsight-curl-config-" + std::to_string(std::rand()) + ".txt");
-  write_file(temp_path, request->body);
-  std::ostringstream curl_config;
-  curl_config << "request = \"POST\"\n";
-  curl_config << "url = \"" << request->url << "\"\n";
-  for (const auto& header : request->headers) {
-    curl_config << "header = \"" << header << "\"\n";
-  }
-  curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
-  write_file(curl_config_path, curl_config.str());
-
-  std::vector<std::string> args = {"curl", "-sS", "--config", curl_config_path.string()};
-  ToolResult response = runner_.run(args, 60);
-  std::filesystem::remove(temp_path);
-  std::filesystem::remove(curl_config_path);
+  const int timeout_seconds = normalized_llm_timeout_seconds(language_options);
+  ToolResult response = execute_llm_request(*request, runner_, "binsight-llm", timeout_seconds);
   if (response.exit_code != 0) {
     warnings.push_back("LLM request failed: " + response.output);
-    return offline_analysis(options, local);
+    return offline_analysis(language_options, local);
   }
 
-  const std::string model_text = extract_model_text(options.provider, response.output);
+  const std::string model_text = extract_model_text(language_options.provider, response.output);
   if (model_text.empty()) {
-    warnings.push_back("failed to extract LLM response text; using local baseline for AI assessment");
-    auto fallback = offline_analysis(options, local);
+    warnings.push_back("failed to extract LLM response text; attempting AI repair for " +
+                       to_string(language));
+    const auto repair_request = build_request(
+        language_options, repair_system_prompt(language),
+        build_repair_prompt(language, response.output, "failed to extract model response text"),
+        warnings);
+    if (repair_request) {
+      ToolResult repair_response = execute_llm_request(*repair_request, runner_, "binsight-llm-repair",
+                                                       timeout_seconds);
+      const std::string repair_text = extract_model_text(language_options.provider, repair_response.output);
+      AiAnalysis repaired;
+      std::string repair_error;
+      if (repair_response.exit_code == 0 &&
+          parse_ai_json_object(language_options, local, repair_text, response.output + "\n\n--- repair raw response ---\n" + repair_response.output,
+                               repaired, repair_error) &&
+          !language_mismatch(language, repaired)) {
+        warnings.push_back("AI assessment required one repair request for " + to_string(language));
+        return repaired;
+      }
+      warnings.push_back("AI repair failed for " + to_string(language) + ": " +
+                         (repair_error.empty() ? repair_response.output : repair_error));
+    }
+    auto fallback = offline_analysis(language_options, local);
     fallback.raw_response = response.output;
     return fallback;
   }
-  return parse_ai_assessment(options, local, model_text, response.output, warnings);
+
+  AiAnalysis analysis;
+  std::string parse_error;
+  if (parse_ai_json_object(language_options, local, model_text, response.output, analysis, parse_error) &&
+      !language_mismatch(language, analysis)) {
+    return analysis;
+  }
+
+  if (parse_error.empty()) {
+    parse_error = "AI response language did not match " + language_name(language);
+  }
+  warnings.push_back(parse_error + "; attempting AI repair for " + to_string(language));
+  const auto repair_request = build_request(language_options, repair_system_prompt(language),
+                                            build_repair_prompt(language, model_text, parse_error),
+                                            warnings);
+  if (repair_request) {
+    ToolResult repair_response = execute_llm_request(*repair_request, runner_, "binsight-llm-repair",
+                                                     timeout_seconds);
+    const std::string repair_text = extract_model_text(language_options.provider, repair_response.output);
+    AiAnalysis repaired;
+    std::string repair_error;
+    if (repair_response.exit_code == 0 &&
+        parse_ai_json_object(language_options, local, repair_text,
+                             response.output + "\n\n--- repair raw response ---\n" + repair_response.output,
+                             repaired, repair_error) &&
+        !language_mismatch(language, repaired)) {
+      warnings.push_back("AI assessment required one repair request for " + to_string(language));
+      return repaired;
+    }
+    warnings.push_back("AI repair failed for " + to_string(language) + ": " +
+                       (repair_error.empty() ? repair_response.output : repair_error));
+  }
+
+  auto fallback = offline_analysis(language_options, local);
+  fallback.raw_response = response.output;
+  return fallback;
 }
 
 AiAnalysis LlmClient::parse_ai_assessment(const ScanOptions& options,
@@ -407,39 +627,14 @@ AiAnalysis LlmClient::parse_ai_assessment(const ScanOptions& options,
                                           const std::string& raw_response,
                                           std::vector<std::string>& warnings) const {
   AiAnalysis analysis;
-  analysis.provider = options.provider;
-  analysis.model = options.model;
-  analysis.raw_response = raw_response;
-  const auto object_text = extract_json_object_text(model_text);
-  if (!object_text) {
-    warnings.push_back("AI assessment did not contain a JSON object; using local baseline for AI assessment");
+  std::string error;
+  if (!parse_ai_json_object(options, local, model_text, raw_response, analysis, error)) {
+    warnings.push_back(error + "; using local baseline for AI assessment");
     auto fallback = offline_analysis(options, local);
     fallback.raw_response = raw_response;
     return fallback;
   }
-
-  try {
-    const auto parsed = json::parse(*object_text);
-    analysis.severity = severity_from_string(string_from_json(parsed.value("severity", json::object()), "info"));
-    analysis.confidence = string_from_json(parsed.value("confidence", json::object()), "low");
-    analysis.summary = string_from_json(parsed.value("summary", json::object()));
-    analysis.decision_basis = string_from_json(parsed.value("decision_basis", json::object()));
-    analysis.risk_sources = string_array_from_json(parsed.value("risk_sources", json::array()));
-    analysis.recommendations = string_array_from_json(parsed.value("recommendations", json::array()));
-    if (analysis.summary.empty()) {
-      warnings.push_back("AI assessment JSON missed summary; using local baseline for AI assessment");
-      auto fallback = offline_analysis(options, local);
-      fallback.raw_response = raw_response;
-      return fallback;
-    }
-    return analysis;
-  } catch (const std::exception& ex) {
-    warnings.push_back(std::string("failed to parse AI assessment JSON: ") + ex.what() +
-                       "; using local baseline for AI assessment");
-    auto fallback = offline_analysis(options, local);
-    fallback.raw_response = raw_response;
-    return fallback;
-  }
+  return analysis;
 }
 
 FinalAssessment LlmClient::fuse_assessments(const AnalysisReport& report,
@@ -511,32 +706,29 @@ LlmConnectionTest LlmClient::test_connection(const ScanOptions& options,
     return result;
   }
 
-  const auto temp_path = std::filesystem::temp_directory_path() /
-                         ("binsight-llm-test-" + std::to_string(std::rand()) + ".json");
-  const auto curl_config_path = std::filesystem::temp_directory_path() /
-                                ("binsight-curl-test-" + std::to_string(std::rand()) + ".txt");
-  write_file(temp_path, request->body);
-  std::ostringstream curl_config;
-  curl_config << "request = \"POST\"\n";
-  curl_config << "url = \"" << request->url << "\"\n";
-  for (const auto& header : request->headers) {
-    curl_config << "header = \"" << header << "\"\n";
-  }
-  curl_config << "data-binary = \"@" << temp_path.generic_string() << "\"\n";
-  write_file(curl_config_path, curl_config.str());
-
-  std::vector<std::string> args = {"curl", "-sS", "--fail-with-body", "--config",
-                                   curl_config_path.string()};
-  ToolResult response = runner_.run(args, 30);
-  std::filesystem::remove(temp_path);
-  std::filesystem::remove(curl_config_path);
+  const int timeout_seconds = normalized_llm_timeout_seconds(options);
+  ToolResult response = execute_llm_request(*request, runner_, "binsight-llm-test", timeout_seconds);
   result.raw_response = response.output;
   if (response.exit_code == 0) {
     result.ok = true;
     result.message = "LLM provider connection succeeded.";
   } else {
     result.ok = false;
-    result.message = "LLM provider connection failed: " + first_chars(response.output, 1200);
+    if (response.output.find("timed out") != std::string::npos ||
+        response.output.find("Operation timed out") != std::string::npos) {
+      result.message = "LLM provider connection timed out after " +
+                       std::to_string(timeout_seconds) +
+                       " seconds. The model may be slow; retry or test a flash/mini model.";
+    } else if (response.output.find("401") != std::string::npos ||
+               response.output.find("Unauthorized") != std::string::npos) {
+      result.message = "LLM provider connection failed: authentication failed. Check the API key.";
+    } else if (response.output.find("404") != std::string::npos ||
+               response.output.find("model") != std::string::npos) {
+      result.message = "LLM provider connection failed: check the base URL and model id. " +
+                       first_chars(response.output, 600);
+    } else {
+      result.message = "LLM provider connection failed: " + first_chars(response.output, 1200);
+    }
   }
   return result;
 }
@@ -562,6 +754,8 @@ std::string LlmClient::build_prompt(const ScanOptions& options, const AnalysisRe
            << "{\"severity\":\"info|low|medium|high|critical\",\"confidence\":\"low|medium|high\","
            << "\"summary\":\"...\",\"decision_basis\":\"...\",\"risk_sources\":[\"...\"],"
            << "\"recommendations\":[\"...\"]}\n"
+           << "All narrative values in summary, decision_basis, risk_sources, and recommendations MUST be English. "
+           << "Keep technical identifiers such as APIs, DLLs, sections, rule IDs, paths, and hashes unchanged. "
            << "Use the local_analysis as a baseline, but provide your own assessment from all evidence. "
            << "Do not classify a sample as high risk from a single API import, a single URL, or provider/API-key configuration strings. "
            << "Escalate only when evidence strength, confidence, and combined evidence support it.\n\n";
@@ -571,6 +765,8 @@ std::string LlmClient::build_prompt(const ScanOptions& options, const AnalysisRe
            << "{\"severity\":\"info|low|medium|high|critical\",\"confidence\":\"low|medium|high\","
            << "\"summary\":\"...\",\"decision_basis\":\"...\",\"risk_sources\":[\"...\"],"
            << "\"recommendations\":[\"...\"]}\n"
+           << "字段名必须保持英文；summary、decision_basis、risk_sources、recommendations 的叙述内容必须使用简体中文。"
+           << "API、DLL、section、规则 ID、路径、hash 等技术标识可以保留原文。"
            << "请把 local_analysis 作为本地基线参考，但你需要基于所有证据给出自己的评估。"
            << "不要因为单个 API 导入、单个 URL、Provider/API key 配置字符串就判定为高风险。"
            << "只有当证据强度、置信度和组合证据足够时才升级风险。\n\n";
@@ -586,12 +782,12 @@ std::string LlmClient::system_prompt(const ScanOptions& options) const {
            << "Separate confirmed evidence from speculation, and distinguish static evidence from dynamic observations. "
            << "Treat capability findings, suspicious findings, and malicious-likely findings differently. "
            << "A single API import, URL, or configuration string is not enough for a high-risk conclusion. "
-           << "Return strict JSON only, with no Markdown or code fences.";
+           << "Return strict JSON only, with no Markdown or code fences. All narrative field values must be English.";
   } else {
     prompt << "你是二进制安全风险分析员。只能基于提供的证据和检索到的知识进行判断，"
            << "必须区分已确认事实和推测风险，并区分静态证据与动态观测。"
            << "必须区分能力提示、可疑行为和高风险倾向；单个 API、URL 或配置字符串不足以得出高风险结论。"
-           << "只能返回严格 JSON，不要返回 Markdown 或代码块。";
+           << "只能返回严格 JSON，不要返回 Markdown 或代码块。字段名保持英文，所有叙述字段值必须使用简体中文。";
   }
   return prompt.str();
 }

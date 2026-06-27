@@ -45,6 +45,16 @@ bool has_static_inconclusive_finding(const AnalysisReport& report) {
   return false;
 }
 
+std::vector<ReportLanguage> requested_markdown_languages(ReportLanguage language) {
+  if (language == ReportLanguage::Chinese) {
+    return {ReportLanguage::Chinese};
+  }
+  if (language == ReportLanguage::English) {
+    return {ReportLanguage::English};
+  }
+  return {ReportLanguage::Chinese, ReportLanguage::English};
+}
+
 }  // namespace
 
 std::filesystem::path with_output_dir(const std::filesystem::path& output_dir,
@@ -118,9 +128,29 @@ AnalysisReport analyze_binary(const ScanOptions& options,
 
   LlmClient llm{runner};
   report.local_analysis = llm.local_analysis(options, report);
-  report.ai_analysis = llm.analyze(options, report, report.warnings);
-  report.final_assessment = llm.fuse_assessments(report, report.local_analysis, report.ai_analysis,
-                                                 report.warnings);
+  const auto languages = requested_markdown_languages(options.report_language);
+  for (const auto language : languages) {
+    const auto ai = llm.analyze_for_language(options, report, language, report.warnings);
+    const auto final = llm.fuse_assessments(report, report.local_analysis, ai, report.warnings);
+    if (language == ReportLanguage::Chinese) {
+      report.ai_analysis_chinese = ai;
+      report.final_assessment_chinese = final;
+    } else if (language == ReportLanguage::English) {
+      report.ai_analysis_english = ai;
+      report.final_assessment_english = final;
+    }
+  }
+
+  if (options.report_language == ReportLanguage::English) {
+    report.ai_analysis = report.ai_analysis_english;
+    report.final_assessment = report.final_assessment_english;
+  } else if (options.report_language == ReportLanguage::Chinese) {
+    report.ai_analysis = report.ai_analysis_chinese;
+    report.final_assessment = report.final_assessment_chinese;
+  } else {
+    report.ai_analysis = report.ai_analysis_chinese;
+    report.final_assessment = report.final_assessment_chinese;
+  }
   return report;
 }
 

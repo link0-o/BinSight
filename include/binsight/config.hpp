@@ -17,6 +17,7 @@ struct AppConfig {
   std::string api_key_name;
   ReportLanguage report_language = ReportLanguage::Both;
   std::filesystem::path output_dir;
+  int llm_timeout_seconds = 90;
 };
 
 class ConfigManager {

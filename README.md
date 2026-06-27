@@ -112,6 +112,8 @@ By default BinSight writes:
 - `report.en.md`
 - `report.json`
 
+When an online AI provider is enabled and `--report-lang both` is used, BinSight requests language-specific AI assessment text for the Chinese and English Markdown reports separately. This may use more than one model request, but keeps each human report language-consistent.
+
 Choose a single Markdown language when needed:
 
 ```bash
@@ -134,7 +136,7 @@ Graphical configuration and scanning:
 ```
 
 The GUI supports English/Chinese interface text, file drag and drop, output directory selection, report language selection, provider/model presets, secure API key saving when the platform supports it, and report preview/open buttons. On Linux without `DISPLAY` or `WAYLAND_DISPLAY`, `binsight gui` falls back with a CLI usage hint instead of trying to open a window.
-The model selector is editable, so users can type a vendor-specific model ID that is not yet in the preset list. The AI Config tab also includes a lightweight model connection test that sends only a short connectivity prompt, not a binary report.
+The model selector is editable, so users can type a vendor-specific model ID that is not yet in the preset list. The AI Config tab also includes a lightweight model connection test that sends only a short connectivity prompt, not a binary report. Slow models can take tens of seconds; the default AI timeout is 90 seconds and can be changed in the GUI, config wizard, or with `--llm-timeout`.
 
 DeepSeek OpenAI-compatible API:
 
@@ -142,7 +144,8 @@ DeepSeek OpenAI-compatible API:
 export DEEPSEEK_API_KEY=...
 ./build/binsight scan ./sample \
   --provider deepseek \
-  --model deepseek-v4-flash
+  --model deepseek-v4-flash \
+  --llm-timeout 120
 ```
 
 DeepSeek Anthropic-compatible API:

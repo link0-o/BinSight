@@ -431,6 +431,20 @@ int main(int argc, char** argv) {
     report.ai_analysis.severity = binsight::Severity::Low;
     report.ai_analysis.summary = "No deterministic risk rules matched.";
     report.ai_analysis.decision_basis = "AI assessment unavailable; this mirrors the local deterministic baseline.";
+    report.ai_analysis_chinese = report.ai_analysis;
+    report.ai_analysis_chinese.summary =
+        "二进制仅表现出网络通信能力，没有足够证据证明恶意行为。";
+    report.ai_analysis_chinese.decision_basis =
+        "本地发现属于能力提示，缺少组合恶意证据。";
+    report.ai_analysis_chinese.risk_sources = {"network-capability: 网络通信能力"};
+    report.ai_analysis_chinese.recommendations = {"确认联网行为是否符合程序预期。"};
+    report.ai_analysis_english = report.ai_analysis;
+    report.ai_analysis_english.summary =
+        "The binary only shows network capability without enough malicious evidence.";
+    report.ai_analysis_english.decision_basis =
+        "The local finding is capability-only and lacks combined malicious evidence.";
+    report.ai_analysis_english.risk_sources = {"network-capability: Network communication capability"};
+    report.ai_analysis_english.recommendations = {"Verify whether network behavior is expected."};
     binsight::RuleFinding finding;
     finding.id = "network-capability";
     finding.title = "Network communication capability";
@@ -447,11 +461,20 @@ int main(int argc, char** argv) {
     report.local_analysis.risk_sources = {"network-capability"};
     report.local_analysis.recommendations = {"Review destinations."};
     report.final_assessment.severity = binsight::Severity::Low;
-    report.final_assessment.summary = "Final assessment summary.";
+    report.final_assessment.summary =
+        "Final severity low combines local baseline (low) and AI assessment (low). AI summary: The binary only shows network capability.";
     report.final_assessment.decision_basis =
-        "No online AI assessment was available; final assessment uses the local deterministic baseline.";
+        "Local and AI assessments agree on severity.";
     report.final_assessment.risk_sources = report.local_analysis.risk_sources;
     report.final_assessment.recommendations = report.local_analysis.recommendations;
+    report.final_assessment_chinese = report.final_assessment;
+    report.final_assessment_chinese.risk_sources = {
+        "network-capability: Network communication capability [capability, low, weak]"};
+    report.final_assessment_chinese.recommendations = {"Verify whether network behavior is expected."};
+    report.final_assessment_english = report.final_assessment;
+    report.final_assessment_english.risk_sources = {
+        "network-capability: Network communication capability [capability, low, weak]"};
+    report.final_assessment_english.recommendations = {"Verify whether network behavior is expected."};
 
     const auto path = std::filesystem::current_path() / "binsight-report-writer-test.json";
     const auto zh_path = std::filesystem::current_path() / "binsight-report-writer-test.zh-CN.md";
@@ -491,6 +514,18 @@ int main(int argc, char** argv) {
           "Chinese report should include risk type");
     check(zh_content.find("证据强度：弱") != std::string::npos,
           "Chinese report should include evidence strength");
+    check(zh_content.find("本地规则与 AI 评估风险等级一致") != std::string::npos,
+          "Chinese report should localize final decision basis");
+    check(zh_content.find("最终风险等级为低") != std::string::npos,
+          "Chinese report should localize final summary template");
+    check(zh_content.find("网络通信能力（能力提示，低置信度，弱证据）") != std::string::npos,
+          "Chinese report should localize structured risk sources");
+    check(zh_content.find("Local and AI assessments agree") == std::string::npos,
+          "Chinese report should not contain English final basis template");
+    check(zh_content.find("Final severity") == std::string::npos,
+          "Chinese report should not contain English final summary template");
+    check(zh_content.find("等级：low") == std::string::npos,
+          "Chinese report should localize severity words in prose");
     check(zh_content.find("Target /") == std::string::npos, "Chinese report should not use mixed headings");
     std::ifstream en_in(en_path);
     std::string en_content((std::istreambuf_iterator<char>(en_in)), std::istreambuf_iterator<char>());
@@ -507,7 +542,13 @@ int main(int argc, char** argv) {
           "English report should include risk type");
     check(en_content.find("Evidence strength: weak") != std::string::npos,
           "English report should include evidence strength");
+    check(en_content.find("Local and AI assessments agree") != std::string::npos,
+          "English report should keep English final basis");
+    check(en_content.find("Final severity low combines") != std::string::npos,
+          "English report should keep English final summary");
     check(en_content.find("目标文件") == std::string::npos, "English report should not use Chinese headings");
+    check(en_content.find("本地规则与 AI") == std::string::npos,
+          "English report should not contain Chinese final templates");
     std::error_code remove_error;
     std::filesystem::remove(path, remove_error);
     std::filesystem::remove(zh_path, remove_error);

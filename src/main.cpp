@@ -104,6 +104,7 @@ void print_usage() {
       << "                 [--report-lang zh-CN|en|both]\n"
       << "                 [--provider " << supported_providers_text() << "] [--model name]\n"
       << "                 [--base-url url] [--api-key-env ENV] [--api-key-name NAME]\n"
+      << "                 [--llm-timeout SECONDS]\n"
       << "                 [--knowledge-dir knowledge] [--rules-dir rules]\n"
       << "                 [--max-disasm-snippets N] [--dynamic-report dynamic.json]\n"
       << "  binsight observe linux-docker <binary> --out dynamic.json --i-understand-risk\n"
@@ -114,6 +115,7 @@ void print_usage() {
       << "  binsight config show\n"
       << "  binsight config test-llm [--provider NAME] [--model NAME]\n"
       << "                 [--base-url URL] [--api-key-env ENV] [--api-key-name NAME]\n"
+      << "                 [--llm-timeout SECONDS]\n"
       << "  binsight config set-key --provider deepseek|kimi|glm|qwen|openai|anthropic|siliconflow|openrouter [--name NAME]\n"
       << "  binsight config delete-key --provider deepseek|kimi|glm|qwen|openai|anthropic|siliconflow|openrouter [--name NAME]\n";
 }
@@ -219,6 +221,7 @@ void apply_config_to_options(const binsight::AppConfig& config, binsight::ScanOp
   options.api_key_name = config.api_key_name;
   options.report_language = config.report_language;
   options.output_dir = config.output_dir;
+  options.llm_timeout_seconds = config.llm_timeout_seconds;
 }
 
 std::string dynamic_risk_notice() {
@@ -266,6 +269,7 @@ int handle_config(int argc, char** argv) {
     std::cout << "Model: " << config.model << '\n';
     std::cout << "Report language: " << binsight::to_string(config.report_language) << '\n';
     std::cout << "Output dir: " << config.output_dir << '\n';
+    std::cout << "LLM timeout seconds: " << config.llm_timeout_seconds << '\n';
     std::cout << "API key env: " << config.api_key_env << '\n';
     std::cout << "API key secure name: " << (config.api_key_name.empty() ? "(none)" : config.api_key_name)
               << '\n';
@@ -284,6 +288,8 @@ int handle_config(int argc, char** argv) {
     config.model = prompt_line("Model", config.model);
     config.report_language = binsight::report_language_from_string(
         prompt_line("Default report language (zh-CN/en/both)", binsight::to_string(config.report_language)));
+    config.llm_timeout_seconds = std::stoi(
+        prompt_line("LLM timeout seconds", std::to_string(config.llm_timeout_seconds)));
     const std::string output_dir = prompt_line("Default output directory (empty = current directory)",
                                                config.output_dir.string());
     config.output_dir = output_dir;
@@ -336,6 +342,8 @@ int handle_config(int argc, char** argv) {
       } else if (arg == "--api-key-name" && next_value(i, argc, argv, value)) {
         options.api_key_name = value;
         key_name_explicit = true;
+      } else if (arg == "--llm-timeout" && next_value(i, argc, argv, value)) {
+        options.llm_timeout_seconds = std::stoi(value);
       } else {
         std::cerr << "binsight: invalid config test-llm option: " << arg << '\n';
         return 1;
@@ -352,6 +360,7 @@ int handle_config(int argc, char** argv) {
     std::cout << "Provider: " << options.provider << '\n';
     std::cout << "Base URL: " << options.base_url << '\n';
     std::cout << "Model: " << options.model << '\n';
+    std::cout << "LLM timeout seconds: " << options.llm_timeout_seconds << '\n';
     std::cout << "Result: " << (result.ok ? "ok" : "failed") << '\n';
     std::cout << result.message << '\n';
     for (const auto& warning : test_warnings) {
@@ -455,6 +464,8 @@ int handle_scan(int argc, char** argv) {
     } else if (arg == "--api-key-name" && next_value(i, argc, argv, value)) {
       options.api_key_name = value;
       key_name_explicit = true;
+    } else if (arg == "--llm-timeout" && next_value(i, argc, argv, value)) {
+      options.llm_timeout_seconds = std::stoi(value);
     } else if (arg == "--knowledge-dir" && next_value(i, argc, argv, value)) {
       options.knowledge_dir = value;
       options.knowledge_dir_explicit = true;

@@ -27,6 +27,7 @@ binsight config test-llm --provider deepseek --model deepseek-v4-flash
 ```
 
 测试请求只发送一条很短的 `Reply with OK.` 提示。
+默认 AI 超时为 90 秒，避免较慢模型被误判为不可用。用户可以通过 `--llm-timeout`、`binsight config wizard` 或 GUI 的 AI 配置页修改。
 
 ## 配置与 API Key
 
@@ -47,5 +48,7 @@ binsight config wizard
 - 指出每个风险来自哪些库、函数、字符串、节区或反汇编片段。
 - 给出简洁、可执行的复核建议。
 - 遵守 `--report-lang`：中文报告请求中文模型输出，英文报告请求英文模型输出。
+- 在 `--report-lang both` 模式下，中文和英文 Markdown 会分别使用对应语言的 AI 评估文本，因此可能产生多次模型调用。
+- 如果模型返回 JSON 结构错误或自然语言不匹配，BinSight 会针对该报告语言最多发起一次 repair 请求。
 - AI 评估字段必须返回结构化 JSON；Markdown 报告由 BinSight 生成。
 - 当本地规则存在强 `malicious-likely` 证据时，最终融合结论保留高风险下限。

@@ -18,6 +18,10 @@ class LlmClient {
   AiAnalysis analyze(const ScanOptions& options,
                      const AnalysisReport& report,
                      std::vector<std::string>& warnings) const;
+  AiAnalysis analyze_for_language(const ScanOptions& options,
+                                  const AnalysisReport& report,
+                                  ReportLanguage language,
+                                  std::vector<std::string>& warnings) const;
   AiAnalysis parse_ai_assessment(const ScanOptions& options,
                                  const RiskAssessment& local,
                                  const std::string& model_text,

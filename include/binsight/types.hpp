@@ -38,6 +38,7 @@ struct ScanOptions {
   std::string api_key_name;
   std::string api_key_override;
   std::filesystem::path dynamic_report_path;
+  int llm_timeout_seconds = 90;
   int max_disasm_snippets = 6;
 };
 
@@ -175,6 +176,10 @@ struct AnalysisReport {
   RiskAssessment local_analysis;
   AiAnalysis ai_analysis;
   FinalAssessment final_assessment;
+  AiAnalysis ai_analysis_chinese;
+  AiAnalysis ai_analysis_english;
+  FinalAssessment final_assessment_chinese;
+  FinalAssessment final_assessment_english;
   DynamicObservations dynamic_observations;
   std::vector<std::string> warnings;
 };
