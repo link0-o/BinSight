@@ -110,6 +110,21 @@ void json_final_assessment(std::ostringstream& out, const FinalAssessment& asses
   out << "}";
 }
 
+bool has_warning_containing(const std::vector<std::string>& warnings, const std::string& needle) {
+  for (const auto& warning : warnings) {
+    if (warning.find(needle) != std::string::npos) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool ai_participated(const AnalysisReport& report) {
+  return report.ai_analysis.provider != "none" &&
+         report.ai_analysis.decision_basis != "AI assessment unavailable; this mirrors the local deterministic baseline." &&
+         !has_warning_containing(report.warnings, "llm_unavailable");
+}
+
 }  // namespace
 
 std::string to_json(const AnalysisReport& report) {
@@ -217,6 +232,8 @@ std::string to_json(const AnalysisReport& report) {
   out << "  \"dynamic_observations\": ";
   out << to_json(report.dynamic_observations);
   out << ",\n";
+
+  out << "  \"ai_participated\": " << (ai_participated(report) ? "true" : "false") << ",\n";
 
   out << "  \"warnings\": ";
   json_string_array(out, report.warnings);

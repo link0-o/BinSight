@@ -622,18 +622,21 @@ DynamicObservations WindowsEtwObserver::observe(const WindowsEtwObserveOptions& 
   observations.network_mode = options.network_mode;
 
   if (!options.risk_accepted) {
+    observations.failure_reason = "risk_not_accepted";
     warnings.push_back("windows_etw observation refused: missing --i-understand-risk");
     observations.warnings = warnings;
     write_dynamic_observations(options.output_path, observations);
     return observations;
   }
   if (!std::filesystem::exists(options.binary_path)) {
+    observations.failure_reason = "binary_missing";
     warnings.push_back("windows_etw observation failed: binary does not exist");
     observations.warnings = warnings;
     write_dynamic_observations(options.output_path, observations);
     return observations;
   }
   if (options.network_mode != "observe" && options.network_mode != "off") {
+    observations.failure_reason = "invalid_network_mode";
     warnings.push_back("windows_etw observation failed: network mode must be observe or off");
     observations.warnings = warnings;
     write_dynamic_observations(options.output_path, observations);
@@ -641,11 +644,13 @@ DynamicObservations WindowsEtwObserver::observe(const WindowsEtwObserveOptions& 
   }
 
 #if !defined(_WIN32)
+  observations.failure_reason = "unsupported_platform";
   warnings.push_back("windows_etw observation is only supported by the Windows build");
   observations.warnings = warnings;
   write_dynamic_observations(options.output_path, observations);
   return observations;
 #elif !defined(BINSIGHT_USE_ETW)
+  observations.failure_reason = "not_enabled";
   warnings.push_back("windows_etw observation is not enabled in this build");
   observations.warnings = warnings;
   write_dynamic_observations(options.output_path, observations);
@@ -676,12 +681,24 @@ DynamicObservations WindowsEtwObserver::observe(const WindowsEtwObserveOptions& 
       &startup,
       &process);
   if (!created) {
-    warnings.push_back("windows_etw observation failed: CreateProcessW error " +
-                       std::to_string(GetLastError()));
+    const DWORD error = GetLastError();
+    if (error == ERROR_ELEVATION_REQUIRED) {
+      observations.failure_reason = "requires_elevation";
+      warnings.push_back(
+          "windows_etw_requires_elevation: target requires administrator privileges; run BinSight from an administrator PowerShell or use the GUI elevation prompt");
+    } else if (error == ERROR_ACCESS_DENIED) {
+      observations.failure_reason = "permission_denied";
+      warnings.push_back("windows_etw_permission_denied: Windows denied process creation");
+    } else {
+      observations.failure_reason = "create_process_failed";
+      warnings.push_back("windows_etw observation failed: CreateProcessW error " +
+                         std::to_string(error));
+    }
     observations.warnings = warnings;
     write_dynamic_observations(options.output_path, observations);
     return observations;
   }
+  observations.started = true;
 
   std::set<DWORD> observed_pids;
   std::set<std::string> seen_network;
@@ -770,6 +787,8 @@ std::string to_json(const DynamicObservations& observations) {
   std::ostringstream out;
   out << "{";
   out << "\"present\":" << (observations.present ? "true" : "false") << ',';
+  out << "\"started\":" << (observations.started ? "true" : "false") << ',';
+  out << "\"failure_reason\":"; json_string(out, observations.failure_reason); out << ',';
   out << "\"platform\":"; json_string(out, observations.platform); out << ',';
   out << "\"mode\":"; json_string(out, observations.mode); out << ',';
   out << "\"timeout_seconds\":" << observations.timeout_seconds << ',';
@@ -839,6 +858,8 @@ std::optional<DynamicObservations> dynamic_observations_from_json(const std::str
   }
   DynamicObservations observations;
   observations.present = json_bool_field(json, "present");
+  observations.started = json_bool_field(json, "started");
+  observations.failure_reason = json_string_field(json, "failure_reason");
   observations.platform = json_string_field(json, "platform");
   observations.mode = json_string_field(json, "mode");
   observations.timeout_seconds = json_int_field(json, "timeout_seconds");

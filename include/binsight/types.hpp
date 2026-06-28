@@ -149,6 +149,8 @@ struct DynamicNetworkEvent {
 
 struct DynamicObservations {
   bool present = false;
+  bool started = false;
+  std::string failure_reason;
   std::string platform;
   std::string mode;
   int timeout_seconds = 0;

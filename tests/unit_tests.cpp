@@ -199,6 +199,7 @@ int main(int argc, char** argv) {
     std::cerr << "[unit] dynamic observation JSON\n";
     binsight::DynamicObservations dynamic;
     dynamic.present = true;
+    dynamic.started = true;
     dynamic.platform = "linux";
     dynamic.mode = "linux-docker";
     dynamic.timeout_seconds = 30;
@@ -214,6 +215,7 @@ int main(int argc, char** argv) {
     const auto parsed = binsight::dynamic_observations_from_json(json, error);
     check(parsed.has_value(), "dynamic observations JSON should parse");
     check(parsed && parsed->present, "dynamic observations should remain present");
+    check(parsed && parsed->started, "dynamic observations should keep started flag");
     check(parsed && parsed->mode == "linux-docker", "dynamic observations should keep mode");
     check(parsed && !parsed->process_events.empty() && parsed->process_events.front().image == "/sample/app",
           "dynamic observations should keep process events");
@@ -225,6 +227,8 @@ int main(int argc, char** argv) {
     std::cerr << "[unit] Windows ETW dynamic observation JSON\n";
     binsight::DynamicObservations dynamic;
     dynamic.present = true;
+    dynamic.started = false;
+    dynamic.failure_reason = "requires_elevation";
     dynamic.platform = "windows";
     dynamic.mode = "windows_etw";
     dynamic.timeout_seconds = 90;
@@ -240,6 +244,9 @@ int main(int argc, char** argv) {
     check(parsed.has_value(), "Windows ETW dynamic observations JSON should parse");
     check(parsed && parsed->platform == "windows", "Windows ETW observations should keep platform");
     check(parsed && parsed->mode == "windows_etw", "Windows ETW observations should keep mode");
+    check(parsed && !parsed->started, "Windows ETW observations should keep started flag");
+    check(parsed && parsed->failure_reason == "requires_elevation",
+          "Windows ETW observations should keep failure reason");
     check(parsed && !parsed->network_events.empty() &&
               parsed->network_events.front().destination == "127.0.0.1:443",
           "Windows ETW observations should keep network events");
@@ -455,6 +462,11 @@ int main(int argc, char** argv) {
     check(warnings.size() > before_warnings, "invalid AI JSON should produce a warning");
     check(ai.severity == medium_report.local_analysis.severity,
           "invalid AI JSON should fall back to local baseline");
+
+    auto offline = llm.parse_ai_assessment(options, medium_report.local_analysis, "not json", "raw", warnings);
+    final = llm.fuse_assessments(medium_report, medium_report.local_analysis, offline, warnings);
+    check(final.decision_basis.find("No online AI assessment was available") != std::string::npos,
+          "offline AI fallback should not be treated as a real AI assessment");
   }
 
   {
@@ -478,6 +490,8 @@ int main(int argc, char** argv) {
     report.target.format_name = "ELF";
     report.analysis_mode = binsight::AnalysisMode::StaticWithDynamicReport;
     report.dynamic_observations.present = true;
+    report.dynamic_observations.started = false;
+    report.dynamic_observations.failure_reason = "requires_elevation";
     report.dynamic_observations.platform = "linux";
     report.dynamic_observations.mode = "linux-docker";
     report.dynamic_observations.network_mode = "none";
@@ -554,6 +568,12 @@ int main(int argc, char** argv) {
           "JSON report should contain rule evidence strength");
     check(content.find("\"dynamic_observations\"") != std::string::npos,
           "JSON report should contain dynamic observations");
+    check(content.find("\"started\":false") != std::string::npos,
+          "JSON report should contain dynamic started state");
+    check(content.find("\"failure_reason\":\"requires_elevation\"") != std::string::npos,
+          "JSON report should contain dynamic failure reason");
+    check(content.find("\"ai_participated\": false") != std::string::npos,
+          "JSON report should mark offline AI fallback as not participated");
     std::ifstream zh_in(zh_path);
     std::string zh_content((std::istreambuf_iterator<char>(zh_in)), std::istreambuf_iterator<char>());
 #ifdef _WIN32
@@ -577,6 +597,10 @@ int main(int argc, char** argv) {
     check(zh_content.find("## AI 评估") != std::string::npos,
           "Chinese report should include AI assessment");
     check(zh_content.find("## 动态观测") != std::string::npos, "Chinese report should include dynamic section");
+    check(zh_content.find("是否已启动目标进程：否") != std::string::npos,
+          "Chinese report should show whether dynamic observation started the target");
+    check(zh_content.find("失败原因：需要管理员权限") != std::string::npos,
+          "Chinese report should localize dynamic failure reason");
     check(zh_content.find("风险类型：能力提示") != std::string::npos,
           "Chinese report should include risk type");
     check(zh_content.find("证据强度：弱") != std::string::npos,
@@ -610,6 +634,10 @@ int main(int argc, char** argv) {
           "English report should include AI assessment");
     check(en_content.find("## Dynamic Observations") != std::string::npos,
           "English report should include dynamic section");
+    check(en_content.find("Target process started: no") != std::string::npos,
+          "English report should show whether dynamic observation started the target");
+    check(en_content.find("Failure reason: requires_elevation") != std::string::npos,
+          "English report should show dynamic failure reason");
     check(en_content.find("Risk type: capability") != std::string::npos,
           "English report should include risk type");
     check(en_content.find("Evidence strength: weak") != std::string::npos,

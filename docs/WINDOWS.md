@@ -85,6 +85,8 @@ If you explicitly choose to run a sample on the local Windows host, use the expe
 
 This mode is not a sandbox. It executes the target on the local host and records bounded JSON summaries instead of raw `.etl` logs. See [Windows ETW Observation](WINDOWS_ETW_OBSERVATION.md).
 
+If a target requires elevation, the report records `failure_reason=requires_elevation`. Run the command from an administrator PowerShell, or use the GUI elevation prompt. Keep the GUI itself non-admin when possible: Windows blocks drag-and-drop from normal Explorer into elevated windows.
+
 Use a dedicated VM, professional sandbox, or imported Sysmon/Windows Event Log evidence for high-risk packed samples. `observe linux-docker` is for Linux ELF samples only and does not run Windows PE files.
 
 ## DeepSeek

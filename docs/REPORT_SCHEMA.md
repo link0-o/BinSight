@@ -44,8 +44,9 @@ Windows builds write Chinese Markdown as UTF-8 with BOM for reliable Windows edi
 - `rag_context`: local knowledge entries used for analysis.
 - `local_analysis`: deterministic baseline built from local rules.
 - `ai_analysis`: independent model assessment when an online provider is enabled; with `provider=none`, it mirrors local analysis.
+- `ai_participated`: `true` only when an online AI assessment completed successfully. If the provider call fails, this is `false` and the report falls back to local analysis.
 - `final_assessment`: fused conclusion from local and AI assessments. Automation should use this as the primary report verdict.
-- `dynamic_observations`: optional Linux Docker, Windows ETW, or imported runtime observation evidence. Static scans leave `present` false.
+- `dynamic_observations`: optional Linux Docker, Windows ETW, or imported runtime observation evidence. Static scans leave `present` false. Dynamic reports include `started` and `failure_reason` so consumers can distinguish a successful runtime run from a refused or failed launch.
 
 ## Assessment Fields
 
@@ -55,7 +56,7 @@ Windows builds write Chinese Markdown as UTF-8 with BOM for reliable Windows edi
 - `ai_analysis`: provider metadata plus `severity`, `confidence`, `summary`, `decision_basis`, `risk_sources`, `recommendations`, and `raw_response`.
 - `final_assessment`: `severity`, `summary`, `decision_basis`, `risk_sources`, and `recommendations`.
 
-If AI parsing or the provider call fails, `final_assessment` falls back to `local_analysis` and the failure is recorded in `warnings`.
+If AI parsing or the provider call fails, `ai_participated=false`, `final_assessment` falls back to `local_analysis`, and the failure is recorded in `warnings`.
 
 ## Rule Finding Fields
 

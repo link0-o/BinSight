@@ -42,6 +42,14 @@
 #include <utility>
 #include <vector>
 
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#endif
+
 namespace {
 
 enum class UiLanguage { English, Chinese };
@@ -65,6 +73,80 @@ QString qstring_from_path(const std::filesystem::path& path) {
 QString app_dir() {
   return QApplication::applicationDirPath();
 }
+
+#ifdef _WIN32
+bool current_process_elevated() {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) {
+    return false;
+  }
+  TOKEN_ELEVATION elevation{};
+  DWORD size = 0;
+  const BOOL ok = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size);
+  CloseHandle(token);
+  return ok && elevation.TokenIsElevated != 0;
+}
+
+std::wstring quote_windows_arg(const std::wstring& value) {
+  std::wstring out = L"\"";
+  for (wchar_t c : value) {
+    if (c == L'"') {
+      out += L"\\\"";
+    } else {
+      out.push_back(c);
+    }
+  }
+  out.push_back(L'"');
+  return out;
+}
+
+bool run_windows_etw_observer_elevated(const std::filesystem::path& exe_dir,
+                                       const binsight::WindowsEtwObserveOptions& observe,
+                                       std::vector<std::string>& warnings) {
+  const auto cli_path = exe_dir / "binsight.exe";
+  std::wostringstream params;
+  params << L"observe windows-etw " << quote_windows_arg(observe.binary_path.wstring())
+         << L" --out " << quote_windows_arg(observe.output_path.wstring())
+         << L" --i-understand-risk"
+         << L" --timeout " << observe.timeout_seconds
+         << L" --network " << QString::fromStdString(observe.network_mode).toStdWString();
+
+  SHELLEXECUTEINFOW info{};
+  info.cbSize = sizeof(info);
+  info.fMask = SEE_MASK_NOCLOSEPROCESS;
+  info.lpVerb = L"runas";
+  const auto file = cli_path.wstring();
+  const auto parameters = params.str();
+  const auto directory = exe_dir.wstring();
+  info.lpFile = file.c_str();
+  info.lpParameters = parameters.c_str();
+  info.lpDirectory = directory.c_str();
+  info.nShow = SW_SHOWNORMAL;
+  if (!ShellExecuteExW(&info)) {
+    const DWORD error = GetLastError();
+    if (error == ERROR_CANCELLED) {
+      warnings.push_back("windows_etw_elevation_cancelled: user cancelled the UAC prompt");
+    } else {
+      warnings.push_back("windows_etw_elevation_failed: ShellExecuteExW error " +
+                         std::to_string(error));
+    }
+    return false;
+  }
+
+  WaitForSingleObject(info.hProcess, INFINITE);
+  DWORD exit_code = 0;
+  if (GetExitCodeProcess(info.hProcess, &exit_code) && exit_code != 0) {
+    warnings.push_back("windows_etw_elevated_observer_exit_code: " + std::to_string(exit_code));
+  }
+  CloseHandle(info.hProcess);
+  if (!std::filesystem::exists(observe.output_path)) {
+    warnings.push_back("windows_etw_elevated_observer_failed: dynamic report was not written");
+    return false;
+  }
+  warnings.push_back("windows_etw_elevated_observation_completed");
+  return true;
+}
+#endif
 
 std::string provider_value(const QString& preset) {
   if (preset == "OpenAI (Responses)") {
@@ -350,6 +432,7 @@ class MainWindow final : public QMainWindow {
     const bool zh = ui_language() == UiLanguage::Chinese;
     const std::string name = key;
     if (name == "drop_prompt") return zh ? "拖拽可执行文件到这里，或点击选择文件" : "Drop a binary here or choose a file";
+    if (name == "drop_admin_prompt") return zh ? "管理员模式无法接收普通资源管理器拖拽；请使用选择文件或粘贴路径" : "Administrator mode cannot receive drops from normal Explorer; choose a file or paste a path";
     if (name == "choose_file") return zh ? "选择文件" : "Choose File";
     if (name == "choose_binary") return zh ? "选择二进制文件" : "Choose binary";
     if (name == "output_dir") return zh ? "输出目录" : "Output Directory";
@@ -402,6 +485,8 @@ class MainWindow final : public QMainWindow {
     if (name == "dynamic_title") return zh ? "动态观测" : "Dynamic observation";
     if (name == "confirm_docker") return zh ? "运行动态观测前必须确认 Docker 风险提示。" : "Confirm the Docker risk notice before running dynamic observation.";
     if (name == "confirm_windows_etw") return zh ? "运行 Windows 专家观测前必须确认本机执行风险。" : "Confirm the local execution risk before running Windows expert observation.";
+    if (name == "elevation_title") return zh ? "需要管理员权限" : "Administrator permission required";
+    if (name == "elevation_prompt") return zh ? "目标程序需要管理员权限才能启动。BinSight 将只以管理员权限运行一次动态观测子进程，GUI 仍保持普通权限。是否继续？" : "The target requires administrator privileges to start. BinSight will elevate only one observation subprocess; the GUI remains non-admin. Continue?";
     if (name == "running_dynamic") return zh ? "正在运行 Docker 动态观测和扫描..." : "Running Docker observation and scan...";
     if (name == "running_windows_etw") return zh ? "正在运行 Windows ETW 专家观测和扫描..." : "Running Windows ETW expert observation and scan...";
     if (name == "running_static") return zh ? "正在运行静态扫描..." : "Running static scan...";
@@ -413,8 +498,17 @@ class MainWindow final : public QMainWindow {
 
   void apply_ui_language() {
     setWindowTitle("BinSight");
+#ifdef _WIN32
+    const bool elevated = current_process_elevated();
+    drop_label_->setAcceptDrops(!elevated);
+    drop_label_->setToolTip(elevated ? tr_text("drop_admin_prompt") : QString());
+#endif
     if (file_path_ != nullptr && file_path_->text().isEmpty()) {
+#ifdef _WIN32
+      drop_label_->setText(current_process_elevated() ? tr_text("drop_admin_prompt") : tr_text("drop_prompt"));
+#else
       drop_label_->setText(tr_text("drop_prompt"));
+#endif
     }
     browse_file_->setText(tr_text("choose_file"));
     browse_output_->setText(tr_text("output_dir"));
@@ -726,6 +820,25 @@ class MainWindow final : public QMainWindow {
           observe.risk_accepted = true;
           binsight::WindowsEtwObserver observer;
           const auto dynamic = observer.observe(observe, warnings);
+          if (dynamic.failure_reason == "requires_elevation") {
+            bool allow_elevation = false;
+            QMetaObject::invokeMethod(qApp, [self, use_chinese, &allow_elevation]() {
+              if (!self) {
+                return;
+              }
+              const auto answer = QMessageBox::question(
+                  self,
+                  self->tr_text("elevation_title"),
+                  self->tr_text("elevation_prompt"),
+                  QMessageBox::Yes | QMessageBox::No,
+                  QMessageBox::No);
+              allow_elevation = answer == QMessageBox::Yes;
+              (void)use_chinese;
+            }, Qt::BlockingQueuedConnection);
+            if (allow_elevation) {
+              run_windows_etw_observer_elevated(exe_dir, observe, warnings);
+            }
+          }
           if (!dynamic.present) {
             throw std::runtime_error("Windows ETW observation failed to start.");
           }

@@ -325,6 +325,10 @@ bool local_findings_are_capability_only(const AnalysisReport& report) {
   return true;
 }
 
+bool ai_is_offline_fallback(const AiAnalysis& ai) {
+  return ai.decision_basis == "AI assessment unavailable; this mirrors the local deterministic baseline.";
+}
+
 void append_unique(std::vector<std::string>& target, const std::vector<std::string>& values) {
   for (const auto& value : values) {
     if (!value.empty() && std::find(target.begin(), target.end(), value) == target.end()) {
@@ -435,6 +439,58 @@ std::optional<LlmHttpRequest> build_request(const ScanOptions& options,
   return request;
 }
 
+std::string llm_failure_diagnostic(const ToolResult& response, int timeout_seconds) {
+  const std::string output = response.output.empty() ? response.error : response.output;
+  const std::string lower = lowercase(output);
+  if (lower.find("timed out") != std::string::npos ||
+      lower.find("operation timed out") != std::string::npos ||
+      lower.find("curl: (28)") != std::string::npos) {
+    return "llm_timeout: request timed out after " + std::to_string(timeout_seconds) +
+           " seconds. Increase --llm-timeout, check network/proxy settings, or try a faster model.";
+  }
+  if (lower.find("curl: (6)") != std::string::npos ||
+      lower.find("could not resolve host") != std::string::npos) {
+    return "llm_network_dns_error: could not resolve the API host. Check DNS, proxy, VPN, or base URL.";
+  }
+  if (lower.find("curl: (7)") != std::string::npos ||
+      lower.find("failed to connect") != std::string::npos ||
+      lower.find("could not connect") != std::string::npos) {
+    return "llm_network_connect_error: failed to connect to the API endpoint. Check firewall, proxy, VPN, or provider availability.";
+  }
+  if (lower.find("401") != std::string::npos || lower.find("unauthorized") != std::string::npos ||
+      lower.find("invalid api key") != std::string::npos) {
+    return "llm_auth_failed: authentication failed. Check the API key and selected provider.";
+  }
+  if (lower.find("403") != std::string::npos || lower.find("forbidden") != std::string::npos) {
+    return "llm_permission_denied: provider rejected the request. Check account permissions, model access, or regional restrictions.";
+  }
+  if (lower.find("404") != std::string::npos || lower.find("model_not_found") != std::string::npos ||
+      lower.find("model not found") != std::string::npos) {
+    return "llm_model_or_url_invalid: model or base URL was not accepted by the provider.";
+  }
+  if (lower.find("429") != std::string::npos || lower.find("rate limit") != std::string::npos) {
+    return "llm_rate_limited: provider rate limit or quota was reached.";
+  }
+  if (lower.find("500") != std::string::npos || lower.find("502") != std::string::npos ||
+      lower.find("503") != std::string::npos || lower.find("504") != std::string::npos) {
+    return "llm_provider_server_error: provider returned a server error; retry later.";
+  }
+  return "llm_request_failed: " + first_chars(output, 1000);
+}
+
+bool retryable_llm_failure(const ToolResult& response) {
+  const std::string lower = lowercase(response.output.empty() ? response.error : response.output);
+  return lower.find("curl: (6)") != std::string::npos ||
+         lower.find("curl: (7)") != std::string::npos ||
+         lower.find("curl: (28)") != std::string::npos ||
+         lower.find("failed to connect") != std::string::npos ||
+         lower.find("could not connect") != std::string::npos ||
+         lower.find("timed out") != std::string::npos ||
+         lower.find("502") != std::string::npos ||
+         lower.find("503") != std::string::npos ||
+         lower.find("504") != std::string::npos;
+}
+
 ToolResult execute_llm_request(const LlmHttpRequest& request,
                                const ProcessRunner& runner,
                                const std::string& temp_prefix,
@@ -460,6 +516,23 @@ ToolResult execute_llm_request(const LlmHttpRequest& request,
   std::filesystem::remove(temp_path);
   std::filesystem::remove(curl_config_path);
   return response;
+}
+
+ToolResult execute_llm_request_with_retry(const LlmHttpRequest& request,
+                                          const ProcessRunner& runner,
+                                          const std::string& temp_prefix,
+                                          int timeout_seconds,
+                                          std::vector<std::string>& warnings) {
+  ToolResult response = execute_llm_request(request, runner, temp_prefix, timeout_seconds);
+  if (response.exit_code == 0 || !retryable_llm_failure(response)) {
+    return response;
+  }
+  warnings.push_back("LLM request failed with a retryable network/provider error; retrying once.");
+  ToolResult retry = execute_llm_request(request, runner, temp_prefix + "-retry", timeout_seconds);
+  if (retry.exit_code == 0) {
+    warnings.push_back("LLM request succeeded after one retry.");
+  }
+  return retry;
 }
 
 std::string language_name(ReportLanguage language) {
@@ -549,9 +622,11 @@ AiAnalysis LlmClient::analyze_for_language(const ScanOptions& options,
   }
 
   const int timeout_seconds = normalized_llm_timeout_seconds(language_options);
-  ToolResult response = execute_llm_request(*request, runner_, "binsight-llm", timeout_seconds);
+  ToolResult response = execute_llm_request_with_retry(*request, runner_, "binsight-llm",
+                                                       timeout_seconds, warnings);
   if (response.exit_code != 0) {
-    warnings.push_back("LLM request failed: " + response.output);
+    warnings.push_back("LLM request failed: " + llm_failure_diagnostic(response, timeout_seconds));
+    warnings.push_back("llm_unavailable: no online AI assessment was completed; final assessment falls back to the local deterministic baseline");
     return offline_analysis(language_options, local);
   }
 
@@ -564,8 +639,9 @@ AiAnalysis LlmClient::analyze_for_language(const ScanOptions& options,
         build_repair_prompt(language, response.output, "failed to extract model response text"),
         warnings);
     if (repair_request) {
-      ToolResult repair_response = execute_llm_request(*repair_request, runner_, "binsight-llm-repair",
-                                                       timeout_seconds);
+      ToolResult repair_response = execute_llm_request_with_retry(*repair_request, runner_,
+                                                                  "binsight-llm-repair",
+                                                                  timeout_seconds, warnings);
       const std::string repair_text = extract_model_text(language_options.provider, repair_response.output);
       AiAnalysis repaired;
       std::string repair_error;
@@ -599,8 +675,9 @@ AiAnalysis LlmClient::analyze_for_language(const ScanOptions& options,
                                             build_repair_prompt(language, model_text, parse_error),
                                             warnings);
   if (repair_request) {
-    ToolResult repair_response = execute_llm_request(*repair_request, runner_, "binsight-llm-repair",
-                                                     timeout_seconds);
+    ToolResult repair_response = execute_llm_request_with_retry(*repair_request, runner_,
+                                                                "binsight-llm-repair",
+                                                                timeout_seconds, warnings);
     const std::string repair_text = extract_model_text(language_options.provider, repair_response.output);
     AiAnalysis repaired;
     std::string repair_error;
@@ -648,7 +725,7 @@ FinalAssessment LlmClient::fuse_assessments(const AnalysisReport& report,
   final.risk_sources = local.risk_sources;
   final.recommendations = local.recommendations;
 
-  if (ai.provider == "none" || ai.summary.empty()) {
+  if (ai.provider == "none" || ai.summary.empty() || ai_is_offline_fallback(ai)) {
     return final;
   }
 
@@ -707,28 +784,16 @@ LlmConnectionTest LlmClient::test_connection(const ScanOptions& options,
   }
 
   const int timeout_seconds = normalized_llm_timeout_seconds(options);
-  ToolResult response = execute_llm_request(*request, runner_, "binsight-llm-test", timeout_seconds);
+  ToolResult response = execute_llm_request_with_retry(*request, runner_, "binsight-llm-test",
+                                                       timeout_seconds, warnings);
   result.raw_response = response.output;
   if (response.exit_code == 0) {
     result.ok = true;
     result.message = "LLM provider connection succeeded.";
   } else {
     result.ok = false;
-    if (response.output.find("timed out") != std::string::npos ||
-        response.output.find("Operation timed out") != std::string::npos) {
-      result.message = "LLM provider connection timed out after " +
-                       std::to_string(timeout_seconds) +
-                       " seconds. The model may be slow; retry or test a flash/mini model.";
-    } else if (response.output.find("401") != std::string::npos ||
-               response.output.find("Unauthorized") != std::string::npos) {
-      result.message = "LLM provider connection failed: authentication failed. Check the API key.";
-    } else if (response.output.find("404") != std::string::npos ||
-               response.output.find("model") != std::string::npos) {
-      result.message = "LLM provider connection failed: check the base URL and model id. " +
-                       first_chars(response.output, 600);
-    } else {
-      result.message = "LLM provider connection failed: " + first_chars(response.output, 1200);
-    }
+    result.message = "LLM provider connection failed: " +
+                     llm_failure_diagnostic(response, timeout_seconds);
   }
   return result;
 }

@@ -33,6 +33,14 @@ The first release records a bounded summary:
 
 The report marks this evidence as `platform=windows` and `mode=windows_etw`.
 
+The dynamic report also records whether the target process actually started:
+
+- `started=true`: the target was launched and runtime evidence may be present.
+- `started=false` with `failure_reason=requires_elevation`: the sample requires administrator privileges. Run `observe windows-etw` from an administrator PowerShell or allow the GUI elevation prompt.
+- `started=false` with another `failure_reason`: the report is an attempted observation, not a successful runtime run.
+
+Windows prevents drag-and-drop from a normal Explorer window into an elevated GUI process. For best usability, run the GUI normally and elevate only the observation subprocess when prompted.
+
 ## Storage Policy
 
 BinSight does not save raw `.etl` traces by default. It writes only `dynamic.json`.
@@ -60,4 +68,3 @@ Use this mode only when all of the following are true:
 - you accept that BinSight cannot prevent persistence, file modification, network access, or other side effects
 
 For high-risk malware, use a dedicated VM or professional sandbox.
-

@@ -193,6 +193,38 @@ std::string zh_known_text(const std::string& value) {
   if (value == "AI assessment unavailable; this mirrors the local deterministic baseline.") {
     return "AI 评估不可用；此处镜像本地确定性基线。";
   }
+  if (value == "requires_elevation") return "需要管理员权限";
+  if (value == "permission_denied") return "权限被拒绝";
+  if (value == "create_process_failed") return "创建进程失败";
+  if (value == "unsupported_platform") return "平台不支持";
+  if (value == "not_enabled") return "构建未启用";
+  if (value == "binary_missing") return "目标文件不存在";
+  if (value == "risk_not_accepted") return "未确认风险";
+  if (value == "invalid_network_mode") return "网络模式无效";
+  if (value == "windows_etw_requires_elevation: target requires administrator privileges; run BinSight from an administrator PowerShell or use the GUI elevation prompt") {
+    return "windows_etw_requires_elevation：目标程序需要管理员权限启动；请使用管理员 PowerShell 运行 BinSight，或使用 GUI 提权提示。";
+  }
+  if (value == "windows_etw_permission_denied: Windows denied process creation") {
+    return "windows_etw_permission_denied：Windows 拒绝创建目标进程。";
+  }
+  if (value == "llm_unavailable: no online AI assessment was completed; final assessment falls back to the local deterministic baseline") {
+    return "llm_unavailable：未完成在线 AI 评估；最终结论回退到本地确定性基线。";
+  }
+  if (value.rfind("LLM request failed: llm_timeout:", 0) == 0) {
+    return "LLM 请求失败：连接超时。请增大 AI 超时秒数、检查网络/代理，或换用更快模型。";
+  }
+  if (value.rfind("LLM request failed: llm_network_dns_error:", 0) == 0) {
+    return "LLM 请求失败：无法解析 API 主机。请检查 DNS、代理、VPN 或 Base URL。";
+  }
+  if (value.rfind("LLM request failed: llm_network_connect_error:", 0) == 0) {
+    return "LLM 请求失败：无法连接 API 端点。请检查防火墙、代理、VPN 或服务商可用性。";
+  }
+  if (value.rfind("LLM request failed: llm_auth_failed:", 0) == 0) {
+    return "LLM 请求失败：鉴权失败。请检查 API key 和 Provider。";
+  }
+  if (value.rfind("LLM request failed: llm_model_or_url_invalid:", 0) == 0) {
+    return "LLM 请求失败：模型名或 Base URL 不被服务商接受。";
+  }
   return value;
 }
 
@@ -360,6 +392,10 @@ void write_dynamic_en(std::ostringstream& out, const AnalysisReport& report) {
   const auto& dynamic = report.dynamic_observations;
   out << "- Platform: " << dynamic.platform << "\n";
   out << "- Mode: " << dynamic.mode << "\n";
+  out << "- Target process started: " << (dynamic.started ? "yes" : "no") << "\n";
+  if (!dynamic.failure_reason.empty()) {
+    out << "- Failure reason: " << dynamic.failure_reason << "\n";
+  }
   out << "- Network mode: " << dynamic.network_mode << "\n";
   out << "- Timeout: " << dynamic.timeout_seconds << " seconds\n";
   out << "- Timed out: " << (dynamic.timed_out ? "yes" : "no") << "\n";
@@ -408,6 +444,10 @@ void write_dynamic_zh(std::ostringstream& out, const AnalysisReport& report) {
   const auto& dynamic = report.dynamic_observations;
   out << "- 平台：" << dynamic.platform << "\n";
   out << "- 模式：" << dynamic.mode << "\n";
+  out << "- 是否已启动目标进程：" << (dynamic.started ? "是" : "否") << "\n";
+  if (!dynamic.failure_reason.empty()) {
+    out << "- 失败原因：" << zh_known_text(dynamic.failure_reason) << "\n";
+  }
   out << "- 网络模式：" << dynamic.network_mode << "\n";
   out << "- 超时：" << dynamic.timeout_seconds << " 秒\n";
   out << "- 是否超时：" << (dynamic.timed_out ? "是" : "否") << "\n";

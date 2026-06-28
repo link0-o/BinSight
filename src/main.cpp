@@ -638,7 +638,7 @@ int handle_observe(int argc, char** argv) {
   if (!warnings.empty()) {
     std::cout << "Warnings: " << warnings.size() << '\n';
   }
-  return warnings.empty() ? 0 : 1;
+  return observations.failure_reason.empty() ? 0 : 1;
 }
 
 int handle_gui(char** argv) {

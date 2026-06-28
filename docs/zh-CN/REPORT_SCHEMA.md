@@ -44,8 +44,9 @@ Windows 版中文 Markdown 会以 UTF-8 BOM 写出，方便 Windows 编辑器自
 - `rag_context`：参与分析的本地知识条目。
 - `local_analysis`：由本地规则生成的确定性基线评估。
 - `ai_analysis`：在线 Provider 启用时的 AI 独立评估；`provider=none` 时镜像本地评估。
+- `ai_participated`：只有在线 AI 评估成功完成时才为 `true`。如果 Provider 调用失败，该字段为 `false`，报告回退本地评估。
 - `final_assessment`：本地和 AI 融合后的最终结论。自动化消费时应优先读取该字段。
-- `dynamic_observations`：可选 Linux Docker、Windows ETW 或导入的运行时观测证据。纯静态扫描中 `present` 为 false。
+- `dynamic_observations`：可选 Linux Docker、Windows ETW 或导入的运行时观测证据。纯静态扫描中 `present` 为 false。动态报告包含 `started` 和 `failure_reason`，便于区分成功运行、拒绝运行和启动失败。
 - `warnings`：工具缺失、解析失败或不支持格式等非致命问题。
 
 ## 评估字段
@@ -56,7 +57,7 @@ Windows 版中文 Markdown 会以 UTF-8 BOM 写出，方便 Windows 编辑器自
 - `ai_analysis`：Provider 元数据，以及 `severity`、`confidence`、`summary`、`decision_basis`、`risk_sources`、`recommendations` 和 `raw_response`。
 - `final_assessment`：`severity`、`summary`、`decision_basis`、`risk_sources` 和 `recommendations`。
 
-如果 AI 调用或解析失败，`final_assessment` 会回退到 `local_analysis`，失败原因写入 `warnings`。
+如果 AI 调用或解析失败，`ai_participated=false`，`final_assessment` 会回退到 `local_analysis`，失败原因写入 `warnings`。
 
 ## 规则命中字段
 
