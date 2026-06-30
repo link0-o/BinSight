@@ -68,6 +68,8 @@ report.json
 
 如果系统安装了 `objdump` 或 `llvm-objdump`，BinSight 会额外尝试提取有限反汇编片段。没有这些工具也不会失败，只会在报告 `Warnings / 警告` 里说明反汇编不可用。
 
+安装 LLVM 后，如果扫描强壳或异常 PE 文件时变慢，通常是 `llvm-objdump` 在做可选反汇编增强。核心 PE 解析仍由 LIEF 完成，不依赖 LLVM。可以临时加 `--max-disasm-snippets 0` 跳过反汇编；新版 Windows 外部工具调用会强制超时，超时只写 warning，不应导致核心扫描失败。
+
 根据[工业组件优先法则](DESIGN_PRINCIPLES.md)，LIEF 是生产级 PE/ELF parser。内置 parser 只在 LIEF 禁用或不可用时作为 **Temporary / Prototype / Educational Implementation** fallback 保留。
 
 ## 加壳样本和 ETW 专家动态观测

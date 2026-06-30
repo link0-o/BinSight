@@ -68,6 +68,8 @@ Core PE evidence is extracted by the LIEF-backed production parser in release bu
 
 If `objdump` or `llvm-objdump` is installed, BinSight also attempts bounded disassembly snippets. Missing disassembly tools do not fail the scan; they only add a report warning.
 
+After installing LLVM, scans of packed or malformed PE files may slow down because `llvm-objdump` becomes available for optional disassembly enrichment. Core PE parsing still comes from LIEF and does not depend on LLVM. Use `--max-disasm-snippets 0` to skip disassembly. Newer Windows builds enforce external-tool timeouts, so a stuck disassembler should produce a warning instead of blocking the core scan.
+
 Per the [Industrial Component First Rule](DESIGN_PRINCIPLES.md), LIEF is the production PE/ELF parser. The built-in parser remains available only as a **Temporary / Prototype / Educational Implementation** fallback when LIEF is disabled or unavailable.
 
 ## Packed Samples and ETW Expert Observation
